@@ -83,6 +83,10 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .stream-iframe {
@@ -91,6 +95,11 @@
   border: none;
   display: block;
   background: #000;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transform: translateZ(0);
+  will-change: transform;
+  pointer-events: auto;
 }
 
 .stream-loading-overlay {

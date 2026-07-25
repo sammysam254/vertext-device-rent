@@ -1,7 +1,7 @@
 /**
- * Stream Viewer page — validates token and renders stream in iframe
- * Features centered phone-ratio viewport so controls sit right next to phone display,
- * responsive on both desktop and mobile.
+ * Stream Viewer page — validates token and renders stream in iframe.
+ * Optimized for zero touch latency, WebRTC hardware acceleration,
+ * and high-speed pointer lock input.
  */
 
 import { lookupStream } from '../../api.js';
@@ -35,13 +35,14 @@ export async function renderStreamViewer(token) {
           <div class="stream-loading-overlay" id="stream-loading">
             <div class="stream-loading-logo">Vertext Devices</div>
             <div class="stream-spinner"></div>
-            <p class="stream-loading-text">Verifying access token & initializing stream...</p>
+            <p class="stream-loading-text">Connecting low-latency stream stream...</p>
           </div>
           <iframe
             id="stream-iframe"
             class="stream-iframe"
-            allow="fullscreen; autoplay; clipboard-read; clipboard-write; camera; microphone"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            allow="fullscreen; autoplay; clipboard-read; clipboard-write; camera; microphone; pointer-lock; display-capture; gamepad; accelerometer; gyroscope"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-pointer-lock allow-downloads"
+            loading="eager"
           ></iframe>
         </div>
       </div>
@@ -82,14 +83,14 @@ export async function renderStreamViewer(token) {
       }
     });
 
-    // Safety timeout — remove loader after 8s regardless
+    // Safety timeout — remove loader after 6s regardless
     setTimeout(() => {
       const loader = document.getElementById('stream-loading');
       if (loader) {
         loader.style.opacity = '0';
         setTimeout(() => loader.remove(), 300);
       }
-    }, 8000);
+    }, 6000);
 
   } catch (err) {
     app.innerHTML = `
