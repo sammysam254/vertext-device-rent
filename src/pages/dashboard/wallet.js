@@ -1,5 +1,6 @@
 /**
  * Wallet page — balance, deposit (Paystack + Crypto), transaction history
+ * In-website iframe checkout for both Paystack and NOWPayments (no new tab / full page navigation)
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -32,6 +33,7 @@ async function renderWalletContent(container, user) {
     <div style="margin-top:24px">
       <div class="flex-between mb-16">
         <h3 style="font-size:1rem;font-weight:700">Transaction History</h3>
+        <button class="btn btn-ghost btn-sm" id="refresh-wallet-btn" title="Refresh balance & transactions">🔄 Refresh</button>
       </div>
       <div class="tx-list" id="tx-list">
         ${skeletonTx()}
@@ -40,27 +42,38 @@ async function renderWalletContent(container, user) {
   `;
 
   document.getElementById('open-deposit-btn')?.addEventListener('click', () => openDepositModal(user));
+  document.getElementById('refresh-wallet-btn')?.addEventListener('click', () => loadWalletData());
 
-  // Load data
+  await loadWalletData();
+}
+
+async function loadWalletData() {
   try {
     const [wallet, txData] = await Promise.all([getWallet(), getTransactions()]);
-    document.getElementById('balance-display').innerHTML = `$${(wallet.balance_cents / 100).toFixed(2)}`;
+    const balanceEl = document.getElementById('balance-display');
+    if (balanceEl) balanceEl.innerHTML = `$${(wallet.balance_cents / 100).toFixed(2)}`;
     renderTransactions(txData || []);
   } catch (err) {
-    document.getElementById('balance-display').innerHTML = '$0.00';
+    const balanceEl = document.getElementById('balance-display');
+    if (balanceEl) balanceEl.innerHTML = '$0.00';
     toast.error('Failed to load wallet data.');
-    document.getElementById('tx-list').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">📭</div>
-        <h3>No transactions yet</h3>
-        <p>Deposit funds to get started.</p>
-      </div>
-    `;
+    const txList = document.getElementById('tx-list');
+    if (txList) {
+      txList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📭</div>
+          <h3>No transactions yet</h3>
+          <p>Deposit funds to get started.</p>
+        </div>
+      `;
+    }
   }
 }
 
 function renderTransactions(txs) {
   const list = document.getElementById('tx-list');
+  if (!list) return;
+
   if (!txs.length) {
     list.innerHTML = `
       <div class="empty-state">
@@ -105,7 +118,7 @@ function openDepositModal(user) {
         <div class="deposit-option-card" id="choose-card">
           <div class="deposit-option-icon">💳</div>
           <div class="deposit-option-title">Card Payment</div>
-          <div class="deposit-option-desc">Visa, Mastercard via Paystack. Instant credit.</div>
+          <div class="deposit-option-desc">Visa, Mastercard via Paystack (KES). Instant credit.</div>
         </div>
         <div class="deposit-option-card" id="choose-crypto">
           <div class="deposit-option-icon">₿</div>
@@ -124,8 +137,8 @@ function openDepositModal(user) {
 
 function showAmountForm(method, user) {
   const isCard = method === 'card';
-  // Default KES rate shown to user (matches server default)
   const KES_RATE = 130;
+
   updateModalBody(`
     <div style="margin-bottom:16px">
       <button class="btn btn-ghost btn-sm" id="back-deposit-btn">← Back</button>
@@ -164,21 +177,13 @@ function showAmountForm(method, user) {
         ${isCard ? `<br>Card charged in <strong>KES</strong> (~KES ${KES_RATE} per $1 USD)` : ''}
       </p>
     </div>
-    ${isCard ? `
-      <div class="stream-info-box" style="margin-bottom:16px;background:rgba(6,182,212,0.05);border-color:rgba(6,182,212,0.2)">
-        <p class="text-sm text-secondary">
-          🇰🇪 Your card will be charged in <strong>KES</strong> via Paystack.
-          The equivalent USD amount is credited to your wallet instantly after payment.
-        </p>
-      </div>
-    ` : `
-      <div class="stream-info-box" style="margin-bottom:16px">
-        <p class="text-sm text-secondary">You'll be redirected to NOWPayments to pay in USDT.
-        Credits are applied after blockchain confirmation (1–3 mins).</p>
-      </div>
-    `}
+    <div class="stream-info-box" style="margin-bottom:16px">
+      <p class="text-sm text-secondary">
+        🔒 Payment opens safely inside this window. Your wallet updates automatically.
+      </p>
+    </div>
     <button class="btn btn-primary btn-full" id="confirm-deposit-btn">
-      ${isCard ? '💳 Continue to KES Checkout' : '₿ Generate USDT Invoice'}
+      ${isCard ? '💳 Launch Paystack Checkout' : '₿ Launch Crypto Checkout'}
     </button>
   `);
 
@@ -195,22 +200,87 @@ function showAmountForm(method, user) {
     }
 
     const amount_cents = Math.round(amount * 100);
-    setButtonLoading(btn, true, 'Processing...');
+    setButtonLoading(btn, true, 'Opening Checkout...');
 
     try {
+      let checkoutUrl = '';
+      let title = '';
+
       if (isCard) {
         const result = await depositPaystack({ amount_cents, email: user.email });
-        window.location.href = result.checkout_url;
+        checkoutUrl = result.checkout_url;
+        title = '💳 Paystack Secure Checkout (KES)';
       } else {
         const network = document.getElementById('crypto-network').value;
         const result = await depositCrypto({ amount_cents, currency: network });
-        window.location.href = result.checkout_url;
+        checkoutUrl = result.checkout_url;
+        title = '₿ NOWPayments USDT Checkout';
       }
+
+      closeModal();
+      openInlineCheckoutModal(checkoutUrl, title);
+
     } catch (err) {
       toast.error(err.message);
-      setButtonLoading(btn, false, isCard ? '💳 Continue to Checkout' : '₿ Generate Invoice');
+      setButtonLoading(btn, false, isCard ? '💳 Launch Paystack Checkout' : '₿ Launch Crypto Checkout');
     }
   });
+}
+
+function openInlineCheckoutModal(checkoutUrl, title) {
+  openModal({
+    title,
+    size: 'lg',
+    body: `
+      <div style="position:relative;width:100%;height:560px;border-radius:var(--radius-md);overflow:hidden;background:#fff">
+        <div id="checkout-loader" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg-card);color:var(--text-primary);z-index:2">
+          <div class="spinner-purple" style="width:36px;height:36px;border:3px solid rgba(124,58,237,0.2);border-top-color:var(--purple);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px"></div>
+          <div style="font-size:0.9rem;font-weight:600">Loading Payment Gateway...</div>
+        </div>
+        <iframe
+          id="checkout-iframe"
+          src="${checkoutUrl}"
+          style="width:100%;height:100%;border:none;border-radius:var(--radius-md)"
+          allow="payment"
+        ></iframe>
+      </div>
+      <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center">
+        <span class="text-xs text-muted">
+          🔒 Secure 256-bit SSL Encrypted Payment
+        </span>
+        <button class="btn btn-primary btn-sm" id="done-checkout-btn">
+          ✓ I Have Completed Payment
+        </button>
+      </div>
+    `,
+  });
+
+  setTimeout(() => {
+    const iframe = document.getElementById('checkout-iframe');
+    const loader = document.getElementById('checkout-loader');
+
+    if (iframe) {
+      iframe.addEventListener('load', () => {
+        if (loader) loader.style.display = 'none';
+        try {
+          // Check if iframe navigated back to topup=success
+          if (iframe.contentWindow?.location?.href?.includes('topup=success')) {
+            closeModal();
+            toast.success('💰 Payment complete! Wallet credited.');
+            loadWalletData();
+          }
+        } catch (_) {
+          // Cross-origin restriction expected for external payment gateways
+        }
+      });
+    }
+
+    document.getElementById('done-checkout-btn')?.addEventListener('click', async () => {
+      closeModal();
+      toast.info('Updating your wallet balance...');
+      await loadWalletData();
+    });
+  }, 50);
 }
 
 function formatDateTime(dateStr) {
