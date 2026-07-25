@@ -1,10 +1,11 @@
 /**
- * Login page — Email & Password authentication
+ * Login page — Email & Password authentication with Forgot Password reset
  */
 
 import { supabase } from '../../supabase.js';
 import { navigate } from '../../router.js';
 import { toast } from '../../components/toast.js';
+import { openModal, closeModal } from '../../components/modal.js';
 import { setButtonLoading } from '../../components/loader.js';
 import { getTheme, toggleTheme } from '../../theme.js';
 
@@ -57,7 +58,10 @@ export function renderLogin() {
               </div>
 
               <div class="form-group">
-                <label class="form-label">Password</label>
+                <div class="flex-between" style="margin-bottom:6px">
+                  <label class="form-label" style="margin-bottom:0">Password</label>
+                  <a href="#" id="forgot-pw-link" class="text-xs text-accent" style="text-decoration:none">Forgot password?</a>
+                </div>
                 <div style="position:relative">
                   <input type="password" class="form-input" id="login-password"
                     placeholder="Enter your password" autocomplete="current-password" required style="padding-right:45px">
@@ -103,6 +107,11 @@ function attachLoginListeners() {
 
   form.addEventListener('submit', handleLoginSubmit);
 
+  document.getElementById('forgot-pw-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    openForgotPasswordModal();
+  });
+
   document.getElementById('goto-signup').addEventListener('click', (e) => {
     e.preventDefault();
     navigate('/signup');
@@ -145,6 +154,52 @@ async function handleLoginSubmit(e) {
   } finally {
     setButtonLoading(btn, false, 'Sign In');
   }
+}
+
+function openForgotPasswordModal() {
+  const currentEmail = document.getElementById('login-email').value.trim();
+
+  openModal({
+    title: '🔑 Reset Password',
+    body: `
+      <p class="text-secondary text-sm" style="margin-bottom:16px">
+        Enter your email address and we'll send you a link to reset your password.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input type="email" class="form-input" id="reset-email-input" value="${currentEmail}" placeholder="you@example.com">
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-ghost" id="cancel-reset-btn">Cancel</button>
+      <button class="btn btn-primary" id="send-reset-btn">Send Reset Link</button>
+    `,
+  });
+
+  setTimeout(() => {
+    document.getElementById('cancel-reset-btn')?.addEventListener('click', closeModal);
+    document.getElementById('send-reset-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('send-reset-btn');
+      const email = document.getElementById('reset-email-input').value.trim();
+      if (!email || !/\S+@\S+\.\S+/.test(email)) {
+        toast.error('Please enter a valid email.');
+        return;
+      }
+
+      setButtonLoading(btn, true, 'Sending...');
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + '/#/login',
+        });
+        if (error) throw error;
+        toast.success('Password reset link sent to your email!');
+        closeModal();
+      } catch (err) {
+        toast.error(err.message);
+        setButtonLoading(btn, false, 'Send Reset Link');
+      }
+    });
+  }, 50);
 }
 
 async function redirectAfterLogin() {
