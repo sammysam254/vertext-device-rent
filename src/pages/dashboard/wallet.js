@@ -1,6 +1,7 @@
 /**
- * Wallet page — balance, deposit (Paystack + Crypto), transaction history
+ * Wallet page — balance, deposit (Paystack Card + Crypto), transaction history
  * In-website iframe checkout for both Paystack and NOWPayments (no new tab / full page navigation)
+ * Paystack Card: No minimum limit, restricted strictly to Card payment channels only.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -118,7 +119,7 @@ function openDepositModal(user) {
         <div class="deposit-option-card" id="choose-card">
           <div class="deposit-option-icon">💳</div>
           <div class="deposit-option-title">Card Payment</div>
-          <div class="deposit-option-desc">Visa, Mastercard via Paystack (KES). Instant credit.</div>
+          <div class="deposit-option-desc">Visa, Mastercard via Paystack (Card Only). No minimum limit.</div>
         </div>
         <div class="deposit-option-card" id="choose-crypto">
           <div class="deposit-option-icon">₿</div>
@@ -145,10 +146,10 @@ function showAmountForm(method, user) {
     </div>
     <div style="text-align:center;margin-bottom:20px">
       <div style="font-size:2.5rem;margin-bottom:8px">${isCard ? '💳' : '₿'}</div>
-      <h3>${isCard ? 'Card Deposit (KES)' : 'Crypto Deposit (USDT)'}</h3>
+      <h3>${isCard ? 'Card Payment (KES)' : 'Crypto Deposit (USDT)'}</h3>
       ${isCard ? `
         <div class="badge badge-shared" style="margin-top:8px;display:inline-flex">
-          Payment charged in Kenya Shillings (KES)
+          Visa & Mastercard Card Payment Only
         </div>
       ` : ''}
       ${!isCard ? `
@@ -170,11 +171,11 @@ function showAmountForm(method, user) {
       <div class="price-input-wrapper">
         <span class="price-input-prefix">$</span>
         <input type="number" class="form-input" id="deposit-amount"
-          placeholder="50.00" min="5" step="1" style="padding-left:30px">
+          placeholder="${isCard ? '10.00' : '50.00'}" min="${isCard ? '0.1' : '5'}" step="0.1" style="padding-left:30px">
       </div>
       <p class="text-xs text-muted" style="margin-top:4px">
-        Minimum: $5.00 · Wallet balance shown in USD
-        ${isCard ? `<br>Card charged in <strong>KES</strong> (~KES ${KES_RATE} per $1 USD)` : ''}
+        ${isCard ? 'No minimum deposit requirement for Card payments' : 'Minimum deposit: $5.00 (Crypto requirement)'}
+        ${isCard ? `<br>Charged in <strong>KES</strong> via Card (~KES ${KES_RATE} per $1 USD)` : ''}
       </p>
     </div>
     <div class="stream-info-box" style="margin-bottom:16px">
@@ -183,7 +184,7 @@ function showAmountForm(method, user) {
       </p>
     </div>
     <button class="btn btn-primary btn-full" id="confirm-deposit-btn">
-      ${isCard ? '💳 Launch Paystack Checkout' : '₿ Launch Crypto Checkout'}
+      ${isCard ? '💳 Launch Paystack Card Checkout' : '₿ Launch Crypto Checkout'}
     </button>
   `);
 
@@ -194,9 +195,16 @@ function showAmountForm(method, user) {
     const amountInput = document.getElementById('deposit-amount');
     const amount = parseFloat(amountInput.value);
 
-    if (!amount || amount < 5) {
-      toast.error('Minimum deposit is $5.00');
-      return;
+    if (isCard) {
+      if (!amount || amount <= 0) {
+        toast.error('Please enter a valid deposit amount.');
+        return;
+      }
+    } else {
+      if (!amount || amount < 5) {
+        toast.error('Minimum deposit for Crypto is $5.00.');
+        return;
+      }
     }
 
     const amount_cents = Math.round(amount * 100);
@@ -209,7 +217,7 @@ function showAmountForm(method, user) {
       if (isCard) {
         const result = await depositPaystack({ amount_cents, email: user.email });
         checkoutUrl = result.checkout_url;
-        title = '💳 Paystack Secure Checkout (KES)';
+        title = '💳 Paystack Secure Card Checkout';
       } else {
         const network = document.getElementById('crypto-network').value;
         const result = await depositCrypto({ amount_cents, currency: network });
@@ -222,7 +230,7 @@ function showAmountForm(method, user) {
 
     } catch (err) {
       toast.error(err.message);
-      setButtonLoading(btn, false, isCard ? '💳 Launch Paystack Checkout' : '₿ Launch Crypto Checkout');
+      setButtonLoading(btn, false, isCard ? '💳 Launch Paystack Card Checkout' : '₿ Launch Crypto Checkout');
     }
   });
 }
@@ -235,7 +243,7 @@ function openInlineCheckoutModal(checkoutUrl, title) {
       <div style="position:relative;width:100%;height:560px;border-radius:var(--radius-md);overflow:hidden;background:#fff">
         <div id="checkout-loader" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg-card);color:var(--text-primary);z-index:2">
           <div class="spinner-purple" style="width:36px;height:36px;border:3px solid rgba(124,58,237,0.2);border-top-color:var(--purple);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px"></div>
-          <div style="font-size:0.9rem;font-weight:600">Loading Payment Gateway...</div>
+          <div style="font-size:0.9rem;font-weight:600">Loading Paystack Card Gateway...</div>
         </div>
         <iframe
           id="checkout-iframe"
@@ -246,7 +254,7 @@ function openInlineCheckoutModal(checkoutUrl, title) {
       </div>
       <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center">
         <span class="text-xs text-muted">
-          🔒 Secure 256-bit SSL Encrypted Payment
+          🔒 Secure 256-bit SSL Encrypted Card Payment
         </span>
         <button class="btn btn-primary btn-sm" id="done-checkout-btn">
           ✓ I Have Completed Payment
@@ -263,14 +271,13 @@ function openInlineCheckoutModal(checkoutUrl, title) {
       iframe.addEventListener('load', () => {
         if (loader) loader.style.display = 'none';
         try {
-          // Check if iframe navigated back to topup=success
           if (iframe.contentWindow?.location?.href?.includes('topup=success')) {
             closeModal();
             toast.success('💰 Payment complete! Wallet credited.');
             loadWalletData();
           }
         } catch (_) {
-          // Cross-origin restriction expected for external payment gateways
+          // Cross-origin expected
         }
       });
     }

@@ -1,9 +1,8 @@
 /**
  * POST deposit-paystack
  * Charges in KES (Kenya Shillings). Wallet maintained in USD.
- * KES → USD conversion at a configurable rate (default: 1 USD = 130 KES).
- *
- * Customer deposits in KES, wallet credited in USD equivalent.
+ * Restricts Paystack checkout to CARD payment ONLY (channels: ['card']).
+ * No minimum deposit limit for Paystack.
  */
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
 
@@ -22,8 +21,8 @@ export default async (req) => {
     const user = await verifyAuth(req);
     const { amount_cents, email } = await req.json();
 
-    if (!amount_cents || amount_cents < 500) {
-      return err('Minimum deposit is $5.00 (500 cents)');
+    if (!amount_cents || amount_cents <= 0) {
+      return err('Please enter a valid deposit amount');
     }
 
     // Get KES rate from admin settings or use default
@@ -33,7 +32,7 @@ export default async (req) => {
 
     // Convert USD cents → KES (Paystack amount in smallest unit for KES = 100 * KES amount)
     const usd_amount = amount_cents / 100;
-    const kes_amount = Math.round(usd_amount * kesRate);
+    const kes_amount = Math.max(1, Math.round(usd_amount * kesRate)); // Ensure at least 1 KES
     const paystack_amount = kes_amount * 100; // Paystack KES in kobo-equivalent
 
     const reference = `vd_${user.id.slice(0, 8)}_${Date.now()}`;
@@ -49,7 +48,7 @@ export default async (req) => {
       status: 'pending',
     });
 
-    // Initialize Paystack transaction (KES)
+    // Initialize Paystack transaction (KES, CARD ONLY)
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
       headers: {
@@ -60,6 +59,7 @@ export default async (req) => {
         email: email || user.email,
         amount: paystack_amount,
         currency: 'KES',
+        channels: ['card'], // Restrict to Card Payment ONLY
         reference,
         callback_url: `${APP_URL}/#/dashboard/wallet?topup=success`,
         metadata: {
