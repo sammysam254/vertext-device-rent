@@ -1,7 +1,7 @@
 /**
  * Admin Devices & Streams page
- * Admin can manually add devices & stream URLs, auto-generating 6-digit access tokens,
- * as well as edit existing device stream URLs.
+ * Admin can manually add standalone devices & stream URLs, auto-generating 6-digit access tokens.
+ * Manual devices are NOT shown in customer dashboards and can ONLY be streamed if admin shares the token.
  */
 
 import { renderAdminLayout } from './layout.js';
@@ -30,15 +30,15 @@ async function renderDevicesAdminContent(container) {
     <!-- Info box -->
     <div class="stream-info-box" style="margin-bottom:24px;background:rgba(124,58,237,0.08);border-color:rgba(124,58,237,0.25)">
       <p class="text-sm" style="color:var(--text-primary)">
-        ⚡ <strong>Manual Device Provisioning:</strong> Click <strong>+ Add New Device</strong> to manually assign a device and stream URL to any customer. A unique 6-digit access token is automatically generated and delivered to their dashboard.
+        🔐 <strong>Manual Stream Tokens:</strong> Devices created manually by admin are <strong>NOT shown in customer dashboards</strong>. They can only be accessed by entering the generated 6-digit token at <span style="color:var(--cyan);font-family:var(--font-mono)">vertext.site/stream</span> or via the direct share link.
       </p>
     </div>
 
     <!-- Filter -->
     <div class="filter-tabs" id="device-admin-filters">
       <button class="filter-tab active" data-filter="all">All Devices</button>
-      <button class="filter-tab" data-filter="active">Active</button>
-      <button class="filter-tab" data-filter="no_stream">Missing Stream URL</button>
+      <button class="filter-tab" data-filter="manual">Manual Admin Devices</button>
+      <button class="filter-tab" data-filter="purchased">Customer Purchased</button>
     </div>
 
     <div class="table-wrapper" id="admin-devices-table">
@@ -91,7 +91,7 @@ function renderDevicesTable(devices) {
     <table>
       <thead>
         <tr>
-          <th>Customer</th>
+          <th>Source / User</th>
           <th>Device</th>
           <th>Status</th>
           <th>Stream Token</th>
@@ -101,41 +101,70 @@ function renderDevicesTable(devices) {
         </tr>
       </thead>
       <tbody>
-        ${devices.map(d => `
-          <tr>
-            <td>
-              <div style="font-weight:600;font-size:0.85rem">${d.profiles?.full_name || '—'}</div>
-              <div style="font-size:0.75rem;color:var(--text-muted)">${d.profiles?.email || '—'}</div>
-            </td>
-            <td>
-              <div style="font-weight:600">${d.model}</div>
-              <div style="font-size:0.75rem;color:var(--text-muted);text-transform:capitalize">${d.platform}</div>
-            </td>
-            <td><span class="badge badge-${d.status}">${d.status}</span></td>
-            <td>
-              <div class="stream-link-token" style="font-family:var(--font-mono);letter-spacing:0.1em;font-weight:700">${d.stream_token || '—'}</div>
-            </td>
-            <td>
-              ${d.stream_url
-                ? `<div style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;color:var(--emerald)">✓ Set</div>`
-                : `<span style="color:var(--amber);font-size:0.8rem">⚠ Not set</span>`
-              }
-            </td>
-            <td class="text-sm text-muted">${formatDate(d.expires_at)}</td>
-            <td>
-              <button class="btn btn-primary btn-sm update-stream-btn"
-                data-id="${d.id}"
-                data-model="${d.model}"
-                data-email="${d.profiles?.email || ''}"
-                data-token="${d.stream_token || ''}">
-                ${d.stream_url ? '✏ Update Stream' : '+ Set Stream'}
-              </button>
-            </td>
-          </tr>
-        `).join('')}
+        ${devices.map(d => {
+          const isManual = d.phone_id?.startsWith('manual_');
+          const directLink = `${window.location.origin}/#/stream/${d.stream_token}`;
+          return `
+            <tr>
+              <td>
+                ${isManual ? `
+                  <span class="badge badge-pool" style="font-size:0.7rem">⚡ Manual Admin</span>
+                ` : `
+                  <div style="font-weight:600;font-size:0.85rem">${d.profiles?.full_name || 'Customer'}</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted)">${d.profiles?.email || '—'}</div>
+                `}
+              </td>
+              <td>
+                <div style="font-weight:600">${d.model}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);text-transform:capitalize">${d.platform}</div>
+              </td>
+              <td><span class="badge badge-${d.status}">${d.status}</span></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span class="stream-link-token" style="font-family:var(--font-mono);letter-spacing:0.12em;font-weight:700">${d.stream_token || '—'}</span>
+                  ${d.stream_token ? `
+                    <button class="btn btn-ghost btn-sm copy-token-btn" data-token="${d.stream_token}" title="Copy Token" style="padding:2px 6px;font-size:0.75rem">📋</button>
+                    <button class="btn btn-ghost btn-sm copy-link-btn" data-link="${directLink}" title="Copy Direct Stream Link" style="padding:2px 6px;font-size:0.75rem">🔗</button>
+                  ` : ''}
+                </div>
+              </td>
+              <td>
+                ${d.stream_url
+                  ? `<div style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;color:var(--emerald)">✓ Set</div>`
+                  : `<span style="color:var(--amber);font-size:0.8rem">⚠ Not set</span>`
+                }
+              </td>
+              <td class="text-sm text-muted">${formatDate(d.expires_at)}</td>
+              <td>
+                <button class="btn btn-primary btn-sm update-stream-btn"
+                  data-id="${d.id}"
+                  data-model="${d.model}"
+                  data-email="${d.profiles?.email || 'Manual Device'}"
+                  data-token="${d.stream_token || ''}">
+                  ${d.stream_url ? '✏ Update Stream' : '+ Set Stream'}
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('')}
       </tbody>
     </table>
   `;
+
+  // Attach button listeners
+  wrapper.querySelectorAll('.copy-token-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(btn.dataset.token);
+      toast.success(`Copied token: ${btn.dataset.token}`);
+    });
+  });
+
+  wrapper.querySelectorAll('.copy-link-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(btn.dataset.link);
+      toast.success('Copied direct stream link!');
+    });
+  });
 
   wrapper.querySelectorAll('.update-stream-btn').forEach(btn => {
     btn.addEventListener('click', () => openStreamModal(btn.dataset));
@@ -144,19 +173,19 @@ function renderDevicesTable(devices) {
 
 function openAddDeviceModal() {
   openModal({
-    title: '+ Add New Device & Stream',
+    title: '+ Add Standalone Device & Stream',
     size: 'lg',
     body: `
       <div style="margin-bottom:16px">
         <p class="text-sm text-secondary">
-          Assign a new cloud device and stream URL to a customer. The system will automatically generate a unique 6-digit access token for them.
+          Create a standalone device & stream URL. A unique 6-digit access token will be generated.
+          <br><strong style="color:var(--amber)">Note:</strong> This device will NOT appear in any customer's dashboard. You must copy and share the token manually.
         </p>
       </div>
 
       <div class="form-group">
-        <label class="form-label">Customer Email</label>
-        <input type="email" class="form-input" id="manual-customer-email" placeholder="customer@example.com" required>
-        <p class="text-xs text-muted" style="margin-top:4px">Device will appear in this customer's "My Devices" dashboard.</p>
+        <label class="form-label">Client Reference / Note (Optional)</label>
+        <input type="text" class="form-input" id="manual-client-ref" placeholder="e.g. VIP Client John / Test Stream 1">
       </div>
 
       <div class="grid-2 gap-12">
@@ -176,11 +205,11 @@ function openAddDeviceModal() {
       <div class="form-group">
         <label class="form-label">Stream URL</label>
         <input type="url" class="form-input" id="manual-stream-url" placeholder="https://iphone-stream.cellgods.com/phone.html?id=..." required>
-        <p class="text-xs text-muted" style="margin-top:4px">Full stream link. The customer will only see their branded 6-digit token.</p>
+        <p class="text-xs text-muted" style="margin-top:4px">Full stream URL from provider. Hidden from the user when streaming.</p>
       </div>
 
       <div class="form-group">
-        <label class="form-label">Rental Duration (Days)</label>
+        <label class="form-label">Duration (Days)</label>
         <input type="number" class="form-input" id="manual-duration" value="30" min="1" step="1">
       </div>
     `,
@@ -194,16 +223,12 @@ function openAddDeviceModal() {
     document.getElementById('cancel-add-modal')?.addEventListener('click', closeModal);
     document.getElementById('save-add-device-btn')?.addEventListener('click', async () => {
       const btn = document.getElementById('save-add-device-btn');
-      const email = document.getElementById('manual-customer-email').value.trim();
+      const client_ref = document.getElementById('manual-client-ref').value.trim();
       const model = document.getElementById('manual-model-name').value.trim();
       const platform = document.getElementById('manual-platform').value;
       const stream_url = document.getElementById('manual-stream-url').value.trim();
       const duration_days = parseInt(document.getElementById('manual-duration').value) || 30;
 
-      if (!email || !/\S+@\S+\.\S+/.test(email)) {
-        toast.error('Please enter a valid customer email.');
-        return;
-      }
       if (!model) {
         toast.error('Please enter a device model name.');
         return;
@@ -216,14 +241,14 @@ function openAddDeviceModal() {
       setButtonLoading(btn, true, 'Creating Device & Token...');
       try {
         const result = await adminAddDevice({
-          customer_email: email,
+          client_reference: client_ref,
           model,
           platform,
           stream_url,
           duration_days,
         });
 
-        toast.success(`🎉 Device created! Stream token: ${result.stream_token}`);
+        toast.success(`🎉 Device created! Access Token: ${result.stream_token}`);
         closeModal();
         await loadAdminDevices();
       } catch (err) {
@@ -246,7 +271,7 @@ function openStreamModal(data) {
         </div>
         ${data.token ? `
           <div style="margin-bottom:16px">
-            <div class="text-xs text-muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Current Stream Token</div>
+            <div class="text-xs text-muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Access Token</div>
             <div class="stream-link-token" style="font-size:1.4rem;letter-spacing:0.15em">${data.token}</div>
           </div>
         ` : ''}
@@ -257,12 +282,6 @@ function openStreamModal(data) {
           placeholder="https://iphone-stream.cellgods.com/phone.html?id=...">
         <p class="text-xs text-muted" style="margin-top:4px">
           Paste the full stream URL. A new 6-digit access token will be generated automatically.
-        </p>
-      </div>
-      <div class="stream-info-box">
-        <p class="text-sm text-secondary">
-          🔐 The customer will <strong>never see</strong> this URL.
-          They'll only see their token and the vertext.site stream viewer.
         </p>
       </div>
     `,
@@ -300,8 +319,8 @@ function attachFilterListeners() {
       tab.classList.add('active');
       const filter = tab.dataset.filter;
       let filtered = allAdminDevices;
-      if (filter === 'active') filtered = allAdminDevices.filter(d => d.status === 'active');
-      if (filter === 'no_stream') filtered = allAdminDevices.filter(d => !d.stream_url);
+      if (filter === 'manual') filtered = allAdminDevices.filter(d => d.phone_id?.startsWith('manual_'));
+      if (filter === 'purchased') filtered = allAdminDevices.filter(d => !d.phone_id?.startsWith('manual_'));
       renderDevicesTable(filtered);
     });
   });

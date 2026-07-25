@@ -1,4 +1,8 @@
-/** GET my devices */
+/**
+ * GET my devices
+ * Returns only devices purchased by the customer.
+ * Manual admin-created devices are excluded from customer dashboards.
+ */
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
 
 export default async (req) => {
@@ -9,7 +13,9 @@ export default async (req) => {
       .from('devices')
       .select('*')
       .eq('user_id', user.id)
+      .not('phone_id', 'like', 'manual_%') // Exclude manual admin-added devices
       .order('purchased_at', { ascending: false });
+
     if (error) throw error;
     return ok(data || []);
   } catch (e) {
