@@ -17,33 +17,41 @@ initTheme();
 
 // ---- Lazy page imports ----
 const pages = {
-  landing:     () => import('./pages/landing.js').then(m => m.renderLanding),
-  login:       () => import('./pages/auth/login.js').then(m => m.renderLogin),
-  signup:      () => import('./pages/auth/signup.js').then(m => m.renderSignup),
-  store:       () => import('./pages/dashboard/store.js').then(m => m.renderStore),
-  myDevices:   () => import('./pages/dashboard/my-devices.js').then(m => m.renderMyDevices),
-  stream:      () => import('./pages/dashboard/stream-access.js').then(m => m.renderStreamAccess),
-  wallet:      () => import('./pages/dashboard/wallet.js').then(m => m.renderWallet),
-  streamView:  (p) => import('./pages/stream/viewer.js').then(m => () => m.renderStreamViewer(p.token)),
-  adminHome:   () => import('./pages/admin/overview.js').then(m => m.renderAdminOverview),
-  adminUsers:  () => import('./pages/admin/users.js').then(m => m.renderAdminUsers),
-  adminDevices:() => import('./pages/admin/devices.js').then(m => m.renderAdminDevices),
-  adminPricing:() => import('./pages/admin/pricing.js').then(m => m.renderAdminPricing),
-  adminOrders: () => import('./pages/admin/orders.js').then(m => m.renderAdminOrders),
+  landing:        () => import('./pages/landing.js').then(m => m.renderLanding),
+  login:          () => import('./pages/auth/login.js').then(m => m.renderLogin),
+  signup:         () => import('./pages/auth/signup.js').then(m => m.renderSignup),
+  resetPassword:  () => import('./pages/auth/reset-password.js').then(m => m.renderResetPassword),
+  store:          () => import('./pages/dashboard/store.js').then(m => m.renderStore),
+  myDevices:      () => import('./pages/dashboard/my-devices.js').then(m => m.renderMyDevices),
+  stream:         () => import('./pages/dashboard/stream-access.js').then(m => m.renderStreamAccess),
+  wallet:         () => import('./pages/dashboard/wallet.js').then(m => m.renderWallet),
+  streamView:     (p) => import('./pages/stream/viewer.js').then(m => () => m.renderStreamViewer(p.token)),
+  adminHome:      () => import('./pages/admin/overview.js').then(m => m.renderAdminOverview),
+  adminUsers:     () => import('./pages/admin/users.js').then(m => m.renderAdminUsers),
+  adminDevices:   () => import('./pages/admin/devices.js').then(m => m.renderAdminDevices),
+  adminPricing:   () => import('./pages/admin/pricing.js').then(m => m.renderAdminPricing),
+  adminOrders:    () => import('./pages/admin/orders.js').then(m => m.renderAdminOrders),
 };
 
 // ---- Auth guard ----
-const PUBLIC_ROUTES = ['/', '/login', '/signup', '/stream'];
+const PUBLIC_ROUTES = ['/', '/login', '/signup', '/stream', '/reset-password'];
 
 beforeEach(async (path) => {
   const { data: { session } } = await supabase.auth.getSession();
 
-  const isPublic = PUBLIC_ROUTES.some(r => path === r || path.startsWith('/stream'));
+  const isPublic = PUBLIC_ROUTES.some(r => path === r || path.startsWith('/stream') || path.startsWith('/reset-password'));
   if (!session && !isPublic) {
     navigate('/login');
     return false;
   }
   return true;
+});
+
+// Listen for Supabase password recovery event from email link
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    navigate('/reset-password');
+  }
 });
 
 // ---- Routes ----
@@ -64,6 +72,11 @@ addRoute('/login', async () => {
 
 addRoute('/signup', async () => {
   const render = await pages.signup();
+  render();
+});
+
+addRoute('/reset-password', async () => {
+  const render = await pages.resetPassword();
   render();
 });
 
