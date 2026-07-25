@@ -5,6 +5,7 @@
  * 1. Strictly available ONLY on Admin manually added devices (not CellGods API).
  * 2. Strictly 1 free trial per IP address (network/device IP).
  * 3. Single occupancy: if a trial is active on the device, blocks simultaneous trial usage.
+ * 4. Saves trial_session_${stream_token} with exact expires_at timestamp so page refresh preserves remaining time.
  */
 
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
@@ -64,12 +65,21 @@ export default async (req) => {
 
     const trialExpiresAt = new Date(now + 5 * 60 * 1000).toISOString(); // 5 minutes
 
-    // Save active trial for this device & mark IP address as used
+    // Save active trial for this device, trial session record by stream_token, and mark IP address as used
     await Promise.all([
       supabase.from('admin_settings').upsert({
         key: deviceBusyKey,
         value: {
           phone_id,
+          user_id: user.id,
+          expires_at: trialExpiresAt,
+        },
+      }),
+      supabase.from('admin_settings').upsert({
+        key: `trial_session_${existingDevice.stream_token}`,
+        value: {
+          phone_id,
+          stream_token: existingDevice.stream_token,
           user_id: user.id,
           expires_at: trialExpiresAt,
         },

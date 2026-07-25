@@ -1,6 +1,7 @@
 /**
  * Stream Viewer page — validates token and renders stream in iframe.
- * Supports 5-Minute Free Trial mode with countdown timer & post-trial conversion modal.
+ * Supports 5-Minute Free Trial mode with server-synced countdown timer & post-trial conversion modal.
+ * Preserves exact remaining trial time across page refreshes.
  */
 
 import { lookupStream } from '../../api.js';
@@ -13,7 +14,7 @@ export async function renderStreamViewer(token) {
     return;
   }
 
-  const isTrial = window.location.hash.includes('trial=true') || window.location.search.includes('trial=true');
+  const isTrialUrl = window.location.hash.includes('trial=true') || window.location.search.includes('trial=true');
 
   // Show loading screen & layout shell
   app.innerHTML = `
@@ -30,15 +31,6 @@ export async function renderStreamViewer(token) {
           <span>Connecting...</span>
         </div>
       </div>
-
-      ${isTrial ? `
-        <div id="trial-banner" style="background:linear-gradient(90deg, #7c3aed, #06b6d4);color:#fff;padding:8px 16px;text-align:center;font-size:0.85rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:var(--shadow-sm);z-index:10">
-          <span>⚡ 5-Minute Free Trial</span>
-          <span style="background:rgba(0,0,0,0.3);padding:2px 8px;border-radius:12px;font-family:var(--font-mono)">
-            Time Remaining: <span id="trial-countdown">05:00</span>
-          </span>
-        </div>
-      ` : ''}
 
       <div class="stream-viewport-wrapper">
         <div class="stream-phone-container" id="stream-container">
@@ -80,8 +72,65 @@ export async function renderStreamViewer(token) {
       `;
     }
 
-    // Load iframe
     const iframe = document.getElementById('stream-iframe');
+
+    const isTrial = isTrialUrl || result.is_trial;
+
+    // Server-synced trial countdown handler
+    if (isTrial) {
+      const streamPage = document.querySelector('.stream-page');
+      if (streamPage && !document.getElementById('trial-banner')) {
+        const banner = document.createElement('div');
+        banner.id = 'trial-banner';
+        banner.style.cssText = 'background:linear-gradient(90deg, #7c3aed, #06b6d4);color:#fff;padding:8px 16px;text-align:center;font-size:0.85rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:var(--shadow-sm);z-index:10';
+        banner.innerHTML = `
+          <span>⚡ 5-Minute Free Trial</span>
+          <span style="background:rgba(0,0,0,0.3);padding:2px 8px;border-radius:12px;font-family:var(--font-mono)">
+            Time Remaining: <span id="trial-countdown">05:00</span>
+          </span>
+        `;
+        streamPage.insertBefore(banner, document.querySelector('.stream-viewport-wrapper'));
+      }
+
+      const expiresAtMs = result.trial_expires_at
+        ? new Date(result.trial_expires_at).getTime()
+        : Date.now() + 300000;
+
+      let secondsLeft = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+      const countdownEl = document.getElementById('trial-countdown');
+
+      const updateDisplay = () => {
+        const mins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+        const secs = String(secondsLeft % 60).padStart(2, '0');
+        if (countdownEl) countdownEl.textContent = `${mins}:${secs}`;
+      };
+
+      updateDisplay();
+
+      if (secondsLeft <= 0) {
+        if (iframe) iframe.src = 'about:blank';
+        showTrialExpiredModal(result.model);
+        return;
+      }
+
+      const trialTimer = setInterval(() => {
+        const currentRemaining = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+        secondsLeft = currentRemaining;
+
+        if (secondsLeft <= 0) {
+          clearInterval(trialTimer);
+          if (countdownEl) countdownEl.textContent = '00:00';
+
+          if (iframe) iframe.src = 'about:blank';
+          showTrialExpiredModal(result.model);
+          return;
+        }
+
+        updateDisplay();
+      }, 1000);
+    }
+
+    // Load stream URL into iframe
     iframe.src = result.stream_url;
 
     // Fade out loader when iframe loads
@@ -101,29 +150,6 @@ export async function renderStreamViewer(token) {
         setTimeout(() => loader.remove(), 300);
       }
     }, 6000);
-
-    // 5-Minute Free Trial Countdown Handler
-    if (isTrial) {
-      let secondsLeft = 5 * 60;
-      const countdownEl = document.getElementById('trial-countdown');
-
-      const trialTimer = setInterval(() => {
-        secondsLeft--;
-        if (secondsLeft <= 0) {
-          clearInterval(trialTimer);
-          if (countdownEl) countdownEl.textContent = '00:00';
-
-          // Stop stream and show trial expired modal
-          if (iframe) iframe.src = 'about:blank';
-          showTrialExpiredModal(result.model);
-          return;
-        }
-
-        const mins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
-        const secs = String(secondsLeft % 60).padStart(2, '0');
-        if (countdownEl) countdownEl.textContent = `${mins}:${secs}`;
-      }, 1000);
-    }
 
   } catch (err) {
     app.innerHTML = `
