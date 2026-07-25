@@ -1,7 +1,10 @@
 /**
  * Device Store page
  * Displays available cloud devices (CellGods API + Admin manual devices).
- * Features: Admin-set pricing overrides, 5-minute free trial testing, and instant rental.
+ * Enforces strict rules:
+ * - Free trial buttons appear STRICTLY on Admin manually added devices only.
+ * - Single occupancy: disables trial button if device is currently being tested.
+ * - Admin pricing overrides all devices (CellGods + Admin devices).
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -127,6 +130,31 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
     const canAfford = walletBalance >= oneTimeFee;
     const isIphone = device.platform === 'iphone';
 
+    // Strict Rule: Free trial button appears ONLY for Admin manual devices
+    const isManualAdmin = device.is_manual_admin === true || device.source === 'admin_custom';
+    const isTrialBusy = device.is_trial_busy === true;
+
+    let trialBtnHtml = '';
+    if (isManualAdmin) {
+      if (isTrialBusy) {
+        trialBtnHtml = `
+          <button class="btn btn-ghost btn-full" disabled style="opacity:0.6;cursor:not-allowed;border:1px solid var(--border)">
+            ⏳ Trial in Use
+          </button>
+        `;
+      } else {
+        trialBtnHtml = `
+          <button class="btn btn-ghost btn-full try-free-btn"
+            data-phone-id="${device.phone_id}"
+            data-model="${device.model}"
+            data-platform="${device.platform}"
+            style="border:1px solid var(--purple);color:var(--purple-light)">
+            Try Free (5 Mins)
+          </button>
+        `;
+      }
+    }
+
     return `
       <div class="device-card animate-fade">
         <div class="device-card-header">
@@ -136,8 +164,8 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
           <div class="device-card-info">
             <div class="device-card-model">${device.model}</div>
             <div class="device-card-meta">
-              <span class="badge ${device.source === 'admin_custom' ? 'badge-pool' : 'badge-shared'}">
-                ${device.source === 'admin_custom' ? 'Featured Device' : 'Standard'}
+              <span class="badge ${isManualAdmin ? 'badge-pool' : 'badge-shared'}">
+                ${isManualAdmin ? 'Featured Device' : 'Standard'}
               </span>
               <span class="badge ${isIphone ? 'badge-iphone' : 'badge-android'}">${device.platform}</span>
             </div>
@@ -156,13 +184,7 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
           </div>
 
           <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-            <button class="btn btn-ghost btn-full try-free-btn"
-              data-phone-id="${device.phone_id}"
-              data-model="${device.model}"
-              data-platform="${device.platform}"
-              style="border:1px solid var(--purple);color:var(--purple-light)">
-              Try Free (5 Mins)
-            </button>
+            ${trialBtnHtml}
 
             <button class="btn ${canAfford ? 'btn-primary' : 'btn-secondary'} btn-full purchase-btn"
               data-phone-id="${device.phone_id}"
@@ -193,7 +215,7 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
         toast.success('5-Minute Free Trial launched!');
 
         // Navigate directly to stream viewer in trial mode
-        navigate(`/stream/${trialResult.stream_token}`);
+        navigate(`/stream/${trialResult.stream_token}?trial=true`);
       } catch (err) {
         toast.error(err.message || 'Failed to start free trial.');
         setButtonLoading(btn, false, 'Try Free (5 Mins)');
