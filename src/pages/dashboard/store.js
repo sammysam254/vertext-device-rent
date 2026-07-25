@@ -91,10 +91,15 @@ async function loadInventory(user, walletBalance) {
     renderDevices(allDevices, user, walletBalance, defaultPricing);
   } catch (err) {
     document.getElementById('device-grid').innerHTML = `
-      <div class="empty-state" style="grid-column:1/-1">
-        <h3>Failed to load devices</h3>
-        <p>${err.message}</p>
-        <button class="btn btn-primary mt-16" onclick="location.reload()">Try Again</button>
+      <div class="empty-state animate-fade" style="grid-column:1/-1;padding:48px 24px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);text-align:center">
+        <div style="font-size:3.5rem;margin-bottom:12px">📱</div>
+        <h3 style="font-size:1.4rem;font-weight:800;margin-bottom:10px;color:var(--text-primary)">No Devices Currently Available</h3>
+        <p style="color:var(--text-secondary);max-width:460px;margin:0 auto 24px;line-height:1.6;font-size:0.95rem">
+          We could not fetch active devices right now. Need a custom device or immediate access? Contact our team directly.
+        </p>
+        <a href="mailto:admin@vertext.site?subject=Cloud%20Device%20Inquiry" class="btn btn-primary btn-lg" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;padding:12px 28px;font-size:1rem;box-shadow:var(--shadow-glow)">
+          ✉️ Contact Us (admin@vertext.site)
+        </a>
       </div>
     `;
   }
@@ -145,9 +150,15 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
 
   if (!filtered.length) {
     grid.innerHTML = `
-      <div class="empty-state" style="grid-column:1/-1">
-        <h3>No devices available</h3>
-        <p>Check back soon or try a different filter.</p>
+      <div class="empty-state animate-fade" style="grid-column:1/-1;padding:48px 24px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);text-align:center">
+        <div style="font-size:3.5rem;margin-bottom:12px">📱</div>
+        <h3 style="font-size:1.4rem;font-weight:800;margin-bottom:10px;color:var(--text-primary)">No Devices Currently Available</h3>
+        <p style="color:var(--text-secondary);max-width:460px;margin:0 auto 24px;line-height:1.6;font-size:0.95rem">
+          All cloud devices are currently rented or in maintenance. Need a custom device or immediate access? Contact us directly and we'll setup one for you.
+        </p>
+        <a href="mailto:admin@vertext.site?subject=Cloud%20Device%20Inquiry" class="btn btn-primary btn-lg" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;padding:12px 28px;font-size:1rem;box-shadow:var(--shadow-glow)">
+          ✉️ Contact Us (admin@vertext.site)
+        </a>
       </div>
     `;
     return;
