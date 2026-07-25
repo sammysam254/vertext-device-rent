@@ -1,7 +1,7 @@
 /**
  * Wallet page — balance, deposit (Card + Crypto), transaction history
  * Completely white-labeled: no mention of Paystack or KES in customer UI.
- * System handles KES & Paystack transparently in the background.
+ * Handles payment checkout redirects & topup=success callbacks cleanly.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -15,6 +15,13 @@ export async function renderWallet() {
 }
 
 async function renderWalletContent(container, user) {
+  // Check if returning from a successful payment callback
+  if (window.location.href.includes('topup=success')) {
+    toast.success('🎉 Deposit successful! Your wallet balance has been updated.');
+    // Clean up URL parameter cleanly
+    window.history.replaceState({}, document.title, window.location.pathname + '#/dashboard/wallet');
+  }
+
   container.innerHTML = `
     <div class="page-header">
       <h2>💰 Wallet</h2>
@@ -179,7 +186,7 @@ function showAmountForm(method, user) {
     </div>
     <div class="stream-info-box" style="margin-bottom:16px">
       <p class="text-sm text-secondary">
-        🔒 Payment opens safely inside this window. Your wallet updates automatically.
+        🔒 You will be redirected to the secure payment checkout. Your wallet updates automatically upon completion.
       </p>
     </div>
     <button class="btn btn-primary btn-full" id="confirm-deposit-btn">
@@ -207,92 +214,30 @@ function showAmountForm(method, user) {
     }
 
     const amount_cents = Math.round(amount * 100);
-    setButtonLoading(btn, true, 'Opening Checkout...');
+    setButtonLoading(btn, true, 'Redirecting to Checkout...');
 
     try {
-      let checkoutUrl = '';
-      let title = '';
-
+      let result;
       if (isCard) {
-        const result = await depositPaystack({ amount_cents, email: user.email });
-        checkoutUrl = result.checkout_url;
-        title = '💳 Secure Card Checkout';
+        result = await depositPaystack({ amount_cents, email: user.email });
       } else {
         const network = document.getElementById('crypto-network').value;
-        const result = await depositCrypto({ amount_cents, currency: network });
-        checkoutUrl = result.checkout_url;
-        title = '₿ NOWPayments USDT Checkout';
+        result = await depositCrypto({ amount_cents, currency: network });
       }
 
-      closeModal();
-      openInlineCheckoutModal(checkoutUrl, title);
+      if (result && result.checkout_url) {
+        // Ensure HTTPS
+        const safeUrl = result.checkout_url.replace(/^http:\/\//i, 'https://');
+        window.location.href = safeUrl;
+      } else {
+        throw new Error('Failed to generate checkout link.');
+      }
 
     } catch (err) {
       toast.error(err.message);
       setButtonLoading(btn, false, isCard ? '💳 Pay with Card' : '₿ Launch Crypto Checkout');
     }
   });
-}
-
-function openInlineCheckoutModal(rawCheckoutUrl, title) {
-  const checkoutUrl = rawCheckoutUrl.replace(/^http:\/\//i, 'https://');
-
-  openModal({
-    title,
-    size: 'lg',
-    body: `
-      <div style="position:relative;width:100%;height:560px;border-radius:var(--radius-md);overflow:hidden;background:#fff">
-        <div id="checkout-loader" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg-card);color:var(--text-primary);z-index:2">
-          <div class="spinner-purple" style="width:36px;height:36px;border:3px solid rgba(124,58,237,0.2);border-top-color:var(--purple);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px"></div>
-          <div style="font-size:0.9rem;font-weight:600">Loading Secure Payment Gateway...</div>
-        </div>
-        <iframe
-          id="checkout-iframe"
-          src="${checkoutUrl}"
-          style="width:100%;height:100%;border:none;border-radius:var(--radius-md)"
-          allow="payment"
-        ></iframe>
-      </div>
-      <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <a href="${checkoutUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:0.8rem">
-          🔗 Open Payment Link directly
-        </a>
-        <button class="btn btn-primary btn-sm" id="done-checkout-btn">
-          ✓ I Have Completed Payment
-        </button>
-      </div>
-    `,
-  });
-
-  setTimeout(() => {
-    const iframe = document.getElementById('checkout-iframe');
-    const loader = document.getElementById('checkout-loader');
-
-    if (iframe) {
-      iframe.addEventListener('load', () => {
-        if (loader) loader.style.display = 'none';
-        try {
-          if (iframe.contentWindow?.location?.href?.includes('topup=success')) {
-            closeModal();
-            toast.success('💰 Payment complete! Wallet credited.');
-            loadWalletData();
-          }
-        } catch (_) {
-          // Cross-origin expected
-        }
-      });
-
-      setTimeout(() => {
-        if (loader) loader.style.display = 'none';
-      }, 3000);
-    }
-
-    document.getElementById('done-checkout-btn')?.addEventListener('click', async () => {
-      closeModal();
-      toast.info('Updating your wallet balance...');
-      await loadWalletData();
-    });
-  }, 50);
 }
 
 function formatDateTime(dateStr) {
