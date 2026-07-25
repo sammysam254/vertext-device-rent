@@ -68,7 +68,7 @@ export default async (req) => {
           user_id: resetOwnerId,
           status: 'active',
           show_to_customers: true,
-          purchased_at: null,
+          purchased_at: new Date().toISOString(),
           expires_at: null,
         })
         .eq('id', device.id);
