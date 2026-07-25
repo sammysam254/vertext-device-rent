@@ -1,6 +1,8 @@
 /**
  * Wallet page — balance, deposit (Card + Crypto), transaction history
- * In-website Crypto Payment Modal with QR code, wallet address, copy buttons & 20min live countdown timer.
+ * Completely white-labeled: no mention of Paystack or KES in customer UI.
+ * Paystack Card deposits open in-website via PaystackPop Inline Overlay.
+ * Crypto deposits open in-website via Native Crypto Deposit Modal with QR code & copy buttons.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -196,7 +198,7 @@ function showAmountForm(method, user) {
     </div>
     <div class="stream-info-box" style="margin-bottom:16px">
       <p class="text-sm text-secondary">
-        🔒 Deposit details open inside this window. Your wallet balance updates automatically upon blockchain transfer.
+        🔒 Deposit opens safely inside this window. Your wallet balance updates automatically upon completion.
       </p>
     </div>
     <button class="btn btn-primary btn-full" id="confirm-deposit-btn">
@@ -229,10 +231,34 @@ function showAmountForm(method, user) {
     try {
       if (isCard) {
         const result = await depositPaystack({ amount_cents, email: user.email });
-        if (result && result.checkout_url) {
+
+        // If PaystackPop Inline SDK is loaded on page
+        const publicKey = result.paystack_public_key || (import.meta && import.meta.env && import.meta.env.VITE_PAYSTACK_PUBLIC_KEY);
+
+        if (window.PaystackPop && (result.access_code || publicKey)) {
+          closeModal();
+          const handler = window.PaystackPop.setup({
+            key: publicKey,
+            access_code: result.access_code,
+            email: user.email,
+            amount: result.paystack_amount,
+            currency: 'KES',
+            ref: result.reference,
+            channels: ['card'],
+            onClose: function() {
+              toast.info('Payment window closed');
+            },
+            callback: function() {
+              toast.success('🎉 Deposit successful! Wallet credited.');
+              setTimeout(loadWalletData, 1000);
+            }
+          });
+          handler.openIframe();
+        } else if (result && result.checkout_url) {
+          // Fallback to URL redirect if Inline SDK script not present
           window.location.href = result.checkout_url.replace(/^http:\/\//i, 'https://');
         } else {
-          throw new Error('Failed to generate card checkout.');
+          throw new Error('Failed to initialize card payment.');
         }
       } else {
         const network = document.getElementById('crypto-network').value;

@@ -2,15 +2,14 @@
  * POST deposit-paystack
  * Charges in KES (Kenya Shillings). Wallet maintained in USD.
  * Restricts Paystack checkout to CARD payment ONLY (channels: ['card']).
- * No minimum deposit limit for Paystack.
+ * Returns access_code and public_key for in-website Paystack Pop inline modal.
  */
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+const PAYSTACK_PUBLIC = process.env.VITE_PAYSTACK_PUBLIC_KEY || '';
 const APP_URL = process.env.VITE_APP_URL || 'https://vertext.site';
 
-// KES to USD rate (configurable via admin_settings or env)
-// 1 USD = KES_RATE KES
 const DEFAULT_KES_RATE = 130;
 
 export default async (req) => {
@@ -75,7 +74,10 @@ export default async (req) => {
     if (!psData.status) throw new Error(psData.message || 'Paystack error');
 
     return ok({
+      access_code: psData.data.access_code,
       checkout_url: psData.data.authorization_url,
+      paystack_public_key: PAYSTACK_PUBLIC,
+      paystack_amount,
       reference,
       kes_amount,
       usd_cents: amount_cents,
