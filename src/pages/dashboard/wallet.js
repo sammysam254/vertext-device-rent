@@ -1,7 +1,7 @@
 /**
- * Wallet page — balance, deposit (Paystack Card + Crypto), transaction history
- * NOWPayments tickers fixed (usdtbsc, usdtmatic, usdttrc20, usdterc20, usdtsol).
- * Forced HTTPS on checkout URLs to eliminate Mixed Content blocking.
+ * Wallet page — balance, deposit (Card + Crypto), transaction history
+ * Completely white-labeled: no mention of Paystack or KES in customer UI.
+ * System handles KES & Paystack transparently in the background.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -96,7 +96,7 @@ function renderTransactions(txs) {
       </div>
       <div class="tx-info">
         <div class="tx-type">${labelMap[tx.type] || tx.type}</div>
-        <div class="tx-date">${formatDateTime(tx.created_at)} · ${tx.provider || ''}</div>
+        <div class="tx-date">${formatDateTime(tx.created_at)}</div>
       </div>
       <div>
         <div class="tx-amount ${tx.amount_cents > 0 ? 'positive' : 'negative'}">
@@ -119,7 +119,7 @@ function openDepositModal(user) {
         <div class="deposit-option-card" id="choose-card">
           <div class="deposit-option-icon">💳</div>
           <div class="deposit-option-title">Card Payment</div>
-          <div class="deposit-option-desc">Visa, Mastercard via Paystack (Card Only). Instant credit.</div>
+          <div class="deposit-option-desc">Visa, Mastercard & American Express. Instant credit.</div>
         </div>
         <div class="deposit-option-card" id="choose-crypto">
           <div class="deposit-option-icon">₿</div>
@@ -138,7 +138,6 @@ function openDepositModal(user) {
 
 function showAmountForm(method, user) {
   const isCard = method === 'card';
-  const KES_RATE = 130;
 
   updateModalBody(`
     <div style="margin-bottom:16px">
@@ -146,10 +145,10 @@ function showAmountForm(method, user) {
     </div>
     <div style="text-align:center;margin-bottom:20px">
       <div style="font-size:2.5rem;margin-bottom:8px">${isCard ? '💳' : '₿'}</div>
-      <h3>${isCard ? 'Card Payment (KES)' : 'Crypto Deposit (USDT)'}</h3>
+      <h3>${isCard ? 'Card Payment' : 'Crypto Deposit (USDT)'}</h3>
       ${isCard ? `
         <div class="badge badge-shared" style="margin-top:8px;display:inline-flex">
-          Visa & Mastercard Card Payment Only
+          Visa & Mastercard Card Payment
         </div>
       ` : ''}
       ${!isCard ? `
@@ -175,8 +174,7 @@ function showAmountForm(method, user) {
           placeholder="${isCard ? '10.00' : '50.00'}" min="${isCard ? '0.1' : '5'}" step="0.1" style="padding-left:30px">
       </div>
       <p class="text-xs text-muted" style="margin-top:4px">
-        ${isCard ? 'No minimum deposit requirement for Card payments' : 'Minimum deposit: $5.00 (Crypto requirement)'}
-        ${isCard ? `<br>Charged in <strong>KES</strong> via Card (~KES ${KES_RATE} per $1 USD)` : ''}
+        ${isCard ? 'Instant credit to your USD wallet balance' : 'Minimum deposit: $5.00 (Crypto requirement)'}
       </p>
     </div>
     <div class="stream-info-box" style="margin-bottom:16px">
@@ -185,7 +183,7 @@ function showAmountForm(method, user) {
       </p>
     </div>
     <button class="btn btn-primary btn-full" id="confirm-deposit-btn">
-      ${isCard ? '💳 Launch Paystack Card Checkout' : '₿ Launch Crypto Checkout'}
+      ${isCard ? '💳 Pay with Card' : '₿ Launch Crypto Checkout'}
     </button>
   `);
 
@@ -218,7 +216,7 @@ function showAmountForm(method, user) {
       if (isCard) {
         const result = await depositPaystack({ amount_cents, email: user.email });
         checkoutUrl = result.checkout_url;
-        title = '💳 Paystack Secure Card Checkout';
+        title = '💳 Secure Card Checkout';
       } else {
         const network = document.getElementById('crypto-network').value;
         const result = await depositCrypto({ amount_cents, currency: network });
@@ -231,13 +229,12 @@ function showAmountForm(method, user) {
 
     } catch (err) {
       toast.error(err.message);
-      setButtonLoading(btn, false, isCard ? '💳 Launch Paystack Card Checkout' : '₿ Launch Crypto Checkout');
+      setButtonLoading(btn, false, isCard ? '💳 Pay with Card' : '₿ Launch Crypto Checkout');
     }
   });
 }
 
 function openInlineCheckoutModal(rawCheckoutUrl, title) {
-  // Ensure HTTPS to prevent Mixed Content iframe blocking
   const checkoutUrl = rawCheckoutUrl.replace(/^http:\/\//i, 'https://');
 
   openModal({
@@ -285,7 +282,6 @@ function openInlineCheckoutModal(rawCheckoutUrl, title) {
         }
       });
 
-      // Hide loader after 3s max
       setTimeout(() => {
         if (loader) loader.style.display = 'none';
       }, 3000);
