@@ -1,6 +1,11 @@
 /**
  * POST deposit-crypto — creates NOWPayments invoice
- * Supports USDT on: TRC-20, BEP-20, ERC-20, Polygon
+ * Correct NOWPayments USDT ticker symbols:
+ * - usdttrc20 (Tron TRC-20)
+ * - usdtbsc (BNB Smart Chain BEP-20)
+ * - usdterc20 (Ethereum ERC-20)
+ * - usdtmatic (Polygon)
+ * - usdtsol (Solana)
  */
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
 
@@ -16,12 +21,23 @@ export default async (req) => {
     const { amount_cents, currency = 'usdttrc20' } = await req.json();
 
     if (!amount_cents || amount_cents < 500) {
-      return err('Minimum deposit is $5.00 (500 cents)');
+      return err('Minimum deposit for Crypto is $5.00 (500 cents)');
     }
 
-    const SUPPORTED = ['usdttrc20', 'usdtbep20', 'usdterc20', 'usdtpolygon'];
-    if (!SUPPORTED.includes(currency)) {
-      return err(`Unsupported currency. Use one of: ${SUPPORTED.join(', ')}`);
+    // Correct NOWPayments ticker map
+    const TICKER_MAP = {
+      usdttrc20: 'usdttrc20',
+      usdtbep20: 'usdtbsc',   // NOWPayments ticker for BSC is usdtbsc
+      usdtbsc: 'usdtbsc',
+      usdterc20: 'usdterc20',
+      usdtpolygon: 'usdtmatic', // NOWPayments ticker for Polygon is usdtmatic
+      usdtmatic: 'usdtmatic',
+      usdtsol: 'usdtsol',
+    };
+
+    const validTicker = TICKER_MAP[currency.toLowerCase()];
+    if (!validTicker) {
+      return err(`Unsupported crypto network. Supported: TRC-20 (usdttrc20), BEP-20 (usdtbsc), ERC-20 (usdterc20), Polygon (usdtmatic), Solana (usdtsol)`);
     }
 
     const usd_amount = amount_cents / 100;
@@ -37,7 +53,7 @@ export default async (req) => {
       body: JSON.stringify({
         price_amount: usd_amount,
         price_currency: 'usd',
-        pay_currency: currency,
+        pay_currency: validTicker,
         order_id,
         order_description: `Vertext Devices wallet top-up — $${usd_amount.toFixed(2)}`,
         ipn_callback_url: `${APP_URL}/.netlify/functions/nowpay-webhook`,
@@ -50,8 +66,11 @@ export default async (req) => {
 
     const npData = await npRes.json();
     if (!npRes.ok || !npData.invoice_url) {
-      throw new Error(npData.message || 'NOWPayments error');
+      throw new Error(npData.message || 'NOWPayments API error');
     }
+
+    // Force HTTPS on checkout URL to prevent browser Mixed Content block
+    const checkout_url = npData.invoice_url.replace(/^http:\/\//i, 'https://');
 
     // Save pending transaction
     await supabase.from('wallet_transactions').insert({
@@ -65,11 +84,11 @@ export default async (req) => {
     });
 
     return ok({
-      checkout_url: npData.invoice_url,
+      checkout_url,
       invoice_id: npData.id,
       order_id,
       amount_cents,
-      currency,
+      currency: validTicker,
     });
 
   } catch (e) {

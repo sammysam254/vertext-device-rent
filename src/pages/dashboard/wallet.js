@@ -1,7 +1,7 @@
 /**
  * Wallet page — balance, deposit (Paystack Card + Crypto), transaction history
- * In-website iframe checkout for both Paystack and NOWPayments (no new tab / full page navigation)
- * Paystack Card: No minimum limit, restricted strictly to Card payment channels only.
+ * NOWPayments tickers fixed (usdtbsc, usdtmatic, usdttrc20, usdterc20, usdtsol).
+ * Forced HTTPS on checkout URLs to eliminate Mixed Content blocking.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -119,12 +119,12 @@ function openDepositModal(user) {
         <div class="deposit-option-card" id="choose-card">
           <div class="deposit-option-icon">💳</div>
           <div class="deposit-option-title">Card Payment</div>
-          <div class="deposit-option-desc">Visa, Mastercard via Paystack (Card Only). No minimum limit.</div>
+          <div class="deposit-option-desc">Visa, Mastercard via Paystack (Card Only). Instant credit.</div>
         </div>
         <div class="deposit-option-card" id="choose-crypto">
           <div class="deposit-option-icon">₿</div>
           <div class="deposit-option-title">Crypto (USDT)</div>
-          <div class="deposit-option-desc">USDT via TRC-20, ERC-20, BEP-20, Polygon</div>
+          <div class="deposit-option-desc">USDT via TRC-20, BEP-20, ERC-20, Polygon, Solana</div>
         </div>
       </div>
     `,
@@ -158,9 +158,10 @@ function showAmountForm(method, user) {
             <label class="form-label">USDT Network</label>
             <select class="form-select" id="crypto-network">
               <option value="usdttrc20">TRC-20 (Tron) — Lowest fees</option>
-              <option value="usdtbep20">BEP-20 (BSC)</option>
+              <option value="usdtbsc">BEP-20 (BNB Smart Chain)</option>
               <option value="usdterc20">ERC-20 (Ethereum)</option>
-              <option value="usdtpolygon">Polygon (MATIC)</option>
+              <option value="usdtmatic">Polygon (MATIC)</option>
+              <option value="usdtsol">Solana (SOL)</option>
             </select>
           </div>
         </div>
@@ -235,7 +236,10 @@ function showAmountForm(method, user) {
   });
 }
 
-function openInlineCheckoutModal(checkoutUrl, title) {
+function openInlineCheckoutModal(rawCheckoutUrl, title) {
+  // Ensure HTTPS to prevent Mixed Content iframe blocking
+  const checkoutUrl = rawCheckoutUrl.replace(/^http:\/\//i, 'https://');
+
   openModal({
     title,
     size: 'lg',
@@ -243,7 +247,7 @@ function openInlineCheckoutModal(checkoutUrl, title) {
       <div style="position:relative;width:100%;height:560px;border-radius:var(--radius-md);overflow:hidden;background:#fff">
         <div id="checkout-loader" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg-card);color:var(--text-primary);z-index:2">
           <div class="spinner-purple" style="width:36px;height:36px;border:3px solid rgba(124,58,237,0.2);border-top-color:var(--purple);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px"></div>
-          <div style="font-size:0.9rem;font-weight:600">Loading Paystack Card Gateway...</div>
+          <div style="font-size:0.9rem;font-weight:600">Loading Secure Payment Gateway...</div>
         </div>
         <iframe
           id="checkout-iframe"
@@ -252,10 +256,10 @@ function openInlineCheckoutModal(checkoutUrl, title) {
           allow="payment"
         ></iframe>
       </div>
-      <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center">
-        <span class="text-xs text-muted">
-          🔒 Secure 256-bit SSL Encrypted Card Payment
-        </span>
+      <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <a href="${checkoutUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:0.8rem">
+          🔗 Open Payment Link directly
+        </a>
         <button class="btn btn-primary btn-sm" id="done-checkout-btn">
           ✓ I Have Completed Payment
         </button>
@@ -280,6 +284,11 @@ function openInlineCheckoutModal(checkoutUrl, title) {
           // Cross-origin expected
         }
       });
+
+      // Hide loader after 3s max
+      setTimeout(() => {
+        if (loader) loader.style.display = 'none';
+      }, 3000);
     }
 
     document.getElementById('done-checkout-btn')?.addEventListener('click', async () => {
