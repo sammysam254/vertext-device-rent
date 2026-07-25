@@ -1,8 +1,7 @@
 /**
  * POST stream-lookup — validate 6-digit token, return stream URL (server-side only)
- * The actual URL is never sent to the browser for public access —
- * the iframe src is set only via this function.
- * Evaluates 5-minute free trial expiration timestamps.
+ * Handles both regular device tokens and dedicated 5-minute free trial tokens.
+ * Automatically revokes trial tokens after 5 minutes and returns 'Trial Used' error.
  */
 import { ok, err, supabase } from './auth-check.js';
 
@@ -14,6 +13,42 @@ export default async (req) => {
     const { token } = await req.json();
     if (!token || token.length !== 6) return err('Invalid token format');
 
+    const now = Date.now();
+
+    // 1. Check if token is a dedicated 5-minute trial token
+    const { data: trialSetting } = await supabase
+      .from('admin_settings')
+      .select('value')
+      .eq('key', `trial_token_${token}`)
+      .maybeSingle();
+
+    if (trialSetting && trialSetting.value) {
+      const trial = trialSetting.value;
+      const expiresAtMs = new Date(trial.expires_at).getTime();
+      const remainingMs = expiresAtMs - now;
+
+      // Revoke trial if expired or previously marked used
+      if (remainingMs <= 0 || trial.is_used) {
+        if (!trial.is_used) {
+          await supabase.from('admin_settings').upsert({
+            key: `trial_token_${token}`,
+            value: { ...trial, is_used: true },
+          });
+        }
+        return err('Trial Used. Your 5-minute free trial has ended.', 403);
+      }
+
+      return ok({
+        model: trial.model || 'Cloud Device',
+        platform: trial.platform || 'iphone',
+        stream_url: trial.stream_url,
+        is_trial: true,
+        trial_expires_at: trial.expires_at,
+        remaining_seconds: Math.floor(remainingMs / 1000),
+      });
+    }
+
+    // 2. Regular purchased device subscription check
     const { data: device, error } = await supabase
       .from('devices')
       .select('id, model, platform, status, stream_url, stream_token, expires_at')
@@ -22,42 +57,14 @@ export default async (req) => {
 
     if (error || !device) return err('Token not found', 404);
     if (device.status !== 'active') return err(`Device is ${device.status}`, 403);
+    if (new Date(device.expires_at) < new Date()) return err('Device subscription has expired', 403);
     if (!device.stream_url) return err('Stream not yet provisioned. Please contact support.', 503);
-
-    // Check if this token has an active 5-minute trial session record
-    const { data: trialData } = await supabase
-      .from('admin_settings')
-      .select('value')
-      .eq('key', `trial_session_${token}`)
-      .single();
-
-    let isTrial = false;
-    let trialExpiresAt = null;
-    let remainingSeconds = null;
-
-    if (trialData && trialData.value && trialData.value.expires_at) {
-      isTrial = true;
-      trialExpiresAt = trialData.value.expires_at;
-      const remainingMs = new Date(trialExpiresAt).getTime() - Date.now();
-
-      if (remainingMs <= 0) {
-        return err('This 5-minute free trial has expired.', 403);
-      }
-      remainingSeconds = Math.floor(remainingMs / 1000);
-    } else {
-      // Normal purchased subscription check
-      if (new Date(device.expires_at) < new Date()) {
-        return err('Device subscription has expired', 403);
-      }
-    }
 
     return ok({
       model: device.model,
       platform: device.platform,
       stream_url: device.stream_url,
-      is_trial: isTrial,
-      trial_expires_at: trialExpiresAt,
-      remaining_seconds: remainingSeconds,
+      is_trial: false,
     });
   } catch (e) {
     return err(e.message);

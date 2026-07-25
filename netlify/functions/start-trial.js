@@ -5,10 +5,29 @@
  * 1. Strictly available ONLY on Admin manually added devices (not CellGods API).
  * 2. Strictly 1 free trial per IP address (network/device IP).
  * 3. Single occupancy: if a trial is active on the device, blocks simultaneous trial usage.
- * 4. Saves trial_session_${stream_token} with exact expires_at timestamp so page refresh preserves remaining time.
+ * 4. Generates a DEDICATED, single-use 6-digit trial stream token specifically for this trial session.
+ * 5. Saves trial_token_${trialToken} with exact expires_at timestamp so token is revoked on server after 5 mins.
  */
 
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
+
+function generateToken() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function generateUniqueTrialToken() {
+  let token, exists;
+  do {
+    token = generateToken();
+    const { data } = await supabase
+      .from('admin_settings')
+      .select('key')
+      .eq('key', `trial_token_${token}`)
+      .maybeSingle();
+    exists = !!data;
+  } while (exists);
+  return token;
+}
 
 export default async (req) => {
   if (req.method === 'OPTIONS') return new Response('', { status: 200 });
@@ -44,7 +63,7 @@ export default async (req) => {
       .from('admin_settings')
       .select('value')
       .eq('key', ipKey)
-      .single();
+      .maybeSingle();
 
     if (existingIpTrial) {
       return err('Free trial limit reached. Strictly 1 free trial allowed per network/device IP address.');
@@ -56,32 +75,39 @@ export default async (req) => {
       .from('admin_settings')
       .select('value')
       .eq('key', deviceBusyKey)
-      .single();
+      .maybeSingle();
 
     const now = Date.now();
     if (busyState && busyState.value && new Date(busyState.value.expires_at).getTime() > now) {
       return err('This device is currently being tested on a 5-minute trial by another user. Please try again shortly or rent it directly.');
     }
 
+    // 4. Generate dedicated trial stream token and 5-minute expiry
+    const trialToken = await generateUniqueTrialToken();
     const trialExpiresAt = new Date(now + 5 * 60 * 1000).toISOString(); // 5 minutes
 
-    // Save active trial for this device, trial session record by stream_token, and mark IP address as used
+    // Save dedicated trial token, device busy lock, and mark IP as used
     await Promise.all([
       supabase.from('admin_settings').upsert({
         key: deviceBusyKey,
         value: {
           phone_id,
           user_id: user.id,
+          trial_token: trialToken,
           expires_at: trialExpiresAt,
         },
       }),
       supabase.from('admin_settings').upsert({
-        key: `trial_session_${existingDevice.stream_token}`,
+        key: `trial_token_${trialToken}`,
         value: {
           phone_id,
-          stream_token: existingDevice.stream_token,
+          trial_token: trialToken,
+          stream_url: existingDevice.stream_url,
+          model: existingDevice.model,
+          platform: existingDevice.platform,
           user_id: user.id,
           expires_at: trialExpiresAt,
+          is_used: false,
         },
       }),
       supabase.from('admin_settings').upsert({
@@ -99,7 +125,7 @@ export default async (req) => {
       phone_id,
       model: existingDevice.model,
       platform: existingDevice.platform,
-      stream_token: existingDevice.stream_token,
+      stream_token: trialToken,
       expires_at: trialExpiresAt,
       duration_seconds: 300,
     });

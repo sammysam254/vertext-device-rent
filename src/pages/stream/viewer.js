@@ -1,7 +1,7 @@
 /**
  * Stream Viewer page — validates token and renders stream in iframe.
- * Supports 5-Minute Free Trial mode with server-synced countdown timer & post-trial conversion modal.
- * Preserves exact remaining trial time across page refreshes.
+ * Handles dedicated 5-Minute Free Trial tokens with server-synced countdown timer,
+ * auto-invalidation upon trial expiry, and trial revoked / trial used screen.
  */
 
 import { lookupStream } from '../../api.js';
@@ -73,10 +73,9 @@ export async function renderStreamViewer(token) {
     }
 
     const iframe = document.getElementById('stream-iframe');
-
     const isTrial = isTrialUrl || result.is_trial;
 
-    // Server-synced trial countdown handler
+    // Server-synced trial countdown & auto-invalidation handler
     if (isTrial) {
       const streamPage = document.querySelector('.stream-page');
       if (streamPage && !document.getElementById('trial-banner')) {
@@ -94,7 +93,7 @@ export async function renderStreamViewer(token) {
 
       const expiresAtMs = result.trial_expires_at
         ? new Date(result.trial_expires_at).getTime()
-        : Date.now() + 300000;
+        : Date.now() + (result.remaining_seconds ? result.remaining_seconds * 1000 : 300000);
 
       let secondsLeft = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
       const countdownEl = document.getElementById('trial-countdown');
@@ -109,10 +108,11 @@ export async function renderStreamViewer(token) {
 
       if (secondsLeft <= 0) {
         if (iframe) iframe.src = 'about:blank';
-        showTrialExpiredModal(result.model);
+        renderTrialUsedScreen(app, result.model);
         return;
       }
 
+      // 1-second interval timer
       const trialTimer = setInterval(() => {
         const currentRemaining = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
         secondsLeft = currentRemaining;
@@ -120,9 +120,8 @@ export async function renderStreamViewer(token) {
         if (secondsLeft <= 0) {
           clearInterval(trialTimer);
           if (countdownEl) countdownEl.textContent = '00:00';
-
           if (iframe) iframe.src = 'about:blank';
-          showTrialExpiredModal(result.model);
+          renderTrialUsedScreen(app, result.model);
           return;
         }
 
@@ -152,6 +151,11 @@ export async function renderStreamViewer(token) {
     }, 6000);
 
   } catch (err) {
+    if (err.message.includes('Trial Used') || err.message.includes('trial has ended')) {
+      renderTrialUsedScreen(app, 'Device');
+      return;
+    }
+
     app.innerHTML = `
       <div class="stream-entry-page">
         <div class="stream-entry-box">
@@ -175,30 +179,34 @@ export async function renderStreamViewer(token) {
   }
 }
 
-function showTrialExpiredModal(modelName = 'Device') {
-  import('../../components/modal.js').then(({ openModal, closeModal }) => {
-    openModal({
-      title: '5-Minute Free Trial Complete',
-      body: `
-        <div style="text-align:center;padding:12px 0">
-          <h3 style="margin-bottom:8px">Hope you enjoyed testing ${modelName}!</h3>
-          <p class="text-sm text-secondary" style="margin-bottom:16px">
-            Your 5-minute free trial has ended. Rent this device to get full, uninterrupted access.
-          </p>
-        </div>
-      `,
-      footer: `
-        <button class="btn btn-ghost" onclick="closeModal && closeModal()">Close</button>
-        <button class="btn btn-primary" id="rent-now-trial-btn">Rent Device Now</button>
-      `,
-    });
+function renderTrialUsedScreen(container, modelName = 'Device') {
+  container.innerHTML = `
+    <div class="stream-entry-page">
+      <div class="stream-entry-box" style="max-width:440px;text-align:center">
+        <div style="font-size:3rem;margin-bottom:12px">⌛</div>
+        <h2 class="stream-entry-title" style="color:var(--amber)">Trial Used</h2>
+        <p class="stream-entry-sub" style="margin-bottom:20px">
+          Your 5-minute free trial for <strong>${modelName}</strong> has ended and this trial access link has been revoked.
+          <br>Rent this device to get full, uninterrupted access.
+        </p>
 
-    setTimeout(() => {
-      document.getElementById('rent-now-trial-btn')?.addEventListener('click', () => {
-        closeModal();
-        import('../../router.js').then(({ navigate }) => navigate('/dashboard/store'));
-      });
-    }, 50);
+        <button class="btn btn-primary btn-full btn-lg" id="rent-device-trial-btn">
+          🚀 Rent Device Now
+        </button>
+
+        <button class="btn btn-ghost btn-full mt-12" id="back-store-trial-btn">
+          Return to Device Store
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('rent-device-trial-btn')?.addEventListener('click', () => {
+    import('../../router.js').then(({ navigate }) => navigate('/dashboard/store'));
+  });
+
+  document.getElementById('back-store-trial-btn')?.addEventListener('click', () => {
+    import('../../router.js').then(({ navigate }) => navigate('/dashboard/store'));
   });
 }
 

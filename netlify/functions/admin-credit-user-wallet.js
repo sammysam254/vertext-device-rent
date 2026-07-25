@@ -18,26 +18,38 @@ export default async (req) => {
     }
 
     // 1. Fetch target user's current wallet balance
-    const { data: wallet, error: walletErr } = await supabase
+    const { data: wallet } = await supabase
       .from('wallets')
-      .select('balance_cents')
+      .select('id, balance_cents')
       .eq('user_id', user_id)
-      .single();
+      .maybeSingle();
 
     let currentBalance = wallet?.balance_cents || 0;
     const newBalance = currentBalance + amount_cents;
 
-    // 2. Update wallet balance
-    const { error: updateErr } = await supabase
-      .from('wallets')
-      .upsert({
-        user_id,
-        balance_cents: newBalance,
-        currency: 'usd',
-        updated_at: new Date().toISOString(),
-      });
+    // 2. Update existing wallet or insert new wallet safely avoiding unique constraint errors
+    if (wallet) {
+      const { error: updateErr } = await supabase
+        .from('wallets')
+        .update({
+          balance_cents: newBalance,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user_id);
 
-    if (updateErr) throw updateErr;
+      if (updateErr) throw updateErr;
+    } else {
+      const { error: insertErr } = await supabase
+        .from('wallets')
+        .insert({
+          user_id,
+          balance_cents: newBalance,
+          currency: 'usd',
+          updated_at: new Date().toISOString(),
+        });
+
+      if (insertErr) throw insertErr;
+    }
 
     // 3. Log completed transaction
     const reference = `admin_credit_${Date.now()}`;
