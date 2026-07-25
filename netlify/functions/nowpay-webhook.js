@@ -1,5 +1,6 @@
 /**
  * POST nowpay-webhook — IPN from NOWPayments
+ * Handles 'finished' (completed) as well as 'expired', 'failed', 'refunded' (failed)
  */
 import { ok, err, supabase } from './auth-check.js';
 import crypto from 'crypto';
@@ -20,7 +21,17 @@ export default async (req) => {
       if (signature !== expected) return err('Invalid IPN signature', 401);
     }
 
-    const { payment_status, order_id, price_amount } = event;
+    const { payment_status, order_id } = event;
+
+    // Check if failed or expired
+    if (['expired', 'failed', 'refunded'].includes(payment_status)) {
+      await supabase
+        .from('wallet_transactions')
+        .update({ status: 'failed' })
+        .eq('reference', order_id);
+      return ok({ received: true, status: payment_status });
+    }
+
     if (payment_status !== 'finished') return ok({ received: true, status: payment_status });
 
     // Find pending transaction

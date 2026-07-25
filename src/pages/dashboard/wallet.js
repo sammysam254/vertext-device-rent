@@ -1,7 +1,7 @@
 /**
  * Wallet page — balance, deposit (Card + Crypto), transaction history
- * Completely white-labeled: no mention of Paystack or KES in customer UI.
- * Handles payment checkout redirects & topup=success callbacks cleanly.
+ * Features explicit status badges (Success, Pending, Failed) for all transactions.
+ * Crypto/Card deposits pending for >20 mins are automatically marked Failed by server.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -95,24 +95,37 @@ function renderTransactions(txs) {
 
   const iconMap = { deposit: '↑', purchase: '↓', renewal: '↓' };
   const labelMap = { deposit: 'Deposit', purchase: 'Device Purchase', renewal: 'Monthly Renewal' };
+  const statusBadgeMap = {
+    completed: `<span class="badge badge-active" style="font-size:0.7rem;padding:2px 8px">✓ Success</span>`,
+    pending: `<span class="badge badge-shared" style="font-size:0.7rem;padding:2px 8px;background:rgba(245,158,11,0.15);color:var(--amber);border-color:rgba(245,158,11,0.3)">⏳ Pending</span>`,
+    failed: `<span class="badge badge-cancelled" style="font-size:0.7rem;padding:2px 8px">✕ Failed</span>`,
+  };
 
-  list.innerHTML = txs.map(tx => `
-    <div class="tx-item animate-fade">
-      <div class="tx-icon ${tx.type}">
-        ${iconMap[tx.type] || '•'}
-      </div>
-      <div class="tx-info">
-        <div class="tx-type">${labelMap[tx.type] || tx.type}</div>
-        <div class="tx-date">${formatDateTime(tx.created_at)}</div>
-      </div>
-      <div>
-        <div class="tx-amount ${tx.amount_cents > 0 ? 'positive' : 'negative'}">
-          ${tx.amount_cents > 0 ? '+' : ''}$${Math.abs(tx.amount_cents / 100).toFixed(2)}
+  list.innerHTML = txs.map(tx => {
+    const statusKey = tx.status || (tx.balance_after_cents > 0 ? 'completed' : 'pending');
+    const badgeHtml = statusBadgeMap[statusKey] || statusBadgeMap.pending;
+
+    return `
+      <div class="tx-item animate-fade">
+        <div class="tx-icon ${tx.type}">
+          ${iconMap[tx.type] || '•'}
         </div>
-        <div class="tx-balance">Balance: $${(tx.balance_after_cents / 100).toFixed(2)}</div>
+        <div class="tx-info" style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="tx-type">${labelMap[tx.type] || tx.type}</span>
+            ${badgeHtml}
+          </div>
+          <div class="tx-date">${formatDateTime(tx.created_at)}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="tx-amount ${tx.amount_cents > 0 ? 'positive' : 'negative'}">
+            ${tx.amount_cents > 0 ? '+' : ''}$${Math.abs(tx.amount_cents / 100).toFixed(2)}
+          </div>
+          <div class="tx-balance">Balance: $${(tx.balance_after_cents / 100).toFixed(2)}</div>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function openDepositModal(user) {
