@@ -64,8 +64,12 @@ function renderList(devices) {
 
   // Attach listeners
   devices.forEach(device => {
-    const copyBtn = document.getElementById(`copy-token-${device.id}`);
-    copyBtn?.addEventListener('click', () => copyToClipboard(device.stream_token, copyBtn));
+    const copyTokenBtn = document.getElementById(`copy-token-${device.id}`);
+    copyTokenBtn?.addEventListener('click', () => copyToClipboard(device.stream_token, copyTokenBtn, 'Token'));
+
+    const streamLink = `${window.location.origin}/#/stream/${device.stream_token}`;
+    const copyLinkBtn = document.getElementById(`copy-link-${device.id}`);
+    copyLinkBtn?.addEventListener('click', () => copyToClipboard(streamLink, copyLinkBtn, 'Link'));
 
     const cancelBtn = document.getElementById(`cancel-device-${device.id}`);
     cancelBtn?.addEventListener('click', () => confirmCancel(device));
@@ -84,6 +88,7 @@ function renderDeviceCard(device) {
   const now = new Date();
   const daysLeft = Math.max(0, Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24)));
   const isExpiringSoon = daysLeft <= 5 && isActive;
+  const streamViewerUrl = `${window.location.origin}/#/stream/${device.stream_token}`;
 
   return `
     <div class="my-device-card animate-fade">
@@ -111,19 +116,26 @@ function renderDeviceCard(device) {
         </div>
       </div>
 
-      <!-- Stream Token -->
+      <!-- Stream Token & Direct Link -->
       ${isActive ? `
         <div class="my-device-token-section">
           <div class="token-section-label">Stream Access Token</div>
           <div class="token-display">
             <span class="token-code">${device.stream_token}</span>
             <button class="copy-btn" id="copy-token-${device.id}">
-              📋 Copy
+              📋 Copy Token
             </button>
           </div>
-          <p class="text-xs text-muted mt-8">
-            Use this token at <span style="color:var(--cyan)">vertext.site/stream</span> to access your stream.
-          </p>
+
+          <div class="token-section-label" style="margin-top:12px">Direct Stream Link</div>
+          <div class="token-display">
+            <a href="${streamViewerUrl}" target="_blank" class="token-link-text" style="color:var(--cyan);text-decoration:underline;font-size:0.75rem;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${streamViewerUrl}">
+              ${streamViewerUrl}
+            </a>
+            <button class="copy-btn" id="copy-link-${device.id}">
+              🔗 Copy Link
+            </button>
+          </div>
         </div>
       ` : ''}
 
@@ -184,13 +196,13 @@ function confirmCancel(device) {
   }, 50);
 }
 
-function copyToClipboard(text, btn) {
+function copyToClipboard(text, btn, type = 'Token') {
   navigator.clipboard.writeText(text).then(() => {
     btn.classList.add('copied');
     btn.textContent = '✓ Copied!';
     setTimeout(() => {
       btn.classList.remove('copied');
-      btn.textContent = '📋 Copy';
+      btn.textContent = type === 'Link' ? '🔗 Copy Link' : '📋 Copy Token';
     }, 2000);
   });
 }

@@ -13,7 +13,7 @@ export default async (req) => {
       .from('devices')
       .select('*')
       .eq('user_id', user.id)
-      .not('phone_id', 'like', 'manual_%') // Exclude manual admin-added devices
+      .or('show_to_customers.eq.false,show_to_customers.is.null')
       .order('purchased_at', { ascending: false });
 
     if (error) throw error;
@@ -22,3 +22,4 @@ export default async (req) => {
     return err(e.message, e.message === 'Unauthorized' ? 401 : 500);
   }
 };
+
