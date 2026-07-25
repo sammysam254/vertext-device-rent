@@ -1,7 +1,7 @@
 /**
  * Wallet page — balance, deposit (Card + Crypto), transaction history
- * Completely white-labeled: no mention of Paystack or KES in customer UI.
- * Paystack Card deposits open in-website via PaystackPop Inline Overlay.
+ * Clean, professional UI without emoji clutter.
+ * White-labeled: Paystack Card deposits open in-website via PaystackPop Inline Overlay.
  * Crypto deposits open in-website via Native Crypto Deposit Modal with QR code & copy buttons.
  */
 
@@ -17,13 +17,13 @@ export async function renderWallet() {
 
 async function renderWalletContent(container, user) {
   if (window.location.href.includes('topup=success')) {
-    toast.success('🎉 Deposit successful! Your wallet balance has been updated.');
+    toast.success('Deposit successful! Your wallet balance has been updated.');
     window.history.replaceState({}, document.title, window.location.pathname + '#/dashboard/wallet');
   }
 
   container.innerHTML = `
     <div class="page-header">
-      <h2>💰 Wallet</h2>
+      <h2>Wallet</h2>
       <button class="btn btn-primary" id="open-deposit-btn">+ Deposit Funds</button>
     </div>
 
@@ -40,7 +40,7 @@ async function renderWalletContent(container, user) {
     <div style="margin-top:24px">
       <div class="flex-between mb-16">
         <h3 style="font-size:1rem;font-weight:700">Transaction History</h3>
-        <button class="btn btn-ghost btn-sm" id="refresh-wallet-btn" title="Refresh balance & transactions">🔄 Refresh</button>
+        <button class="btn btn-ghost btn-sm" id="refresh-wallet-btn" title="Refresh balance & transactions">Refresh</button>
       </div>
       <div class="tx-list" id="tx-list">
         ${skeletonTx()}
@@ -68,7 +68,6 @@ async function loadWalletData() {
     if (txList) {
       txList.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-icon">📭</div>
           <h3>No transactions yet</h3>
           <p>Deposit funds to get started.</p>
         </div>
@@ -84,7 +83,6 @@ function renderTransactions(txs) {
   if (!txs.length) {
     list.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">📊</div>
         <h3>No transactions yet</h3>
         <p>Your deposit and purchase history will appear here.</p>
       </div>
@@ -95,9 +93,9 @@ function renderTransactions(txs) {
   const iconMap = { deposit: '↑', purchase: '↓', renewal: '↓' };
   const labelMap = { deposit: 'Deposit', purchase: 'Device Purchase', renewal: 'Monthly Renewal' };
   const statusBadgeMap = {
-    completed: `<span class="badge badge-active" style="font-size:0.7rem;padding:2px 8px">✓ Success</span>`,
-    pending: `<span class="badge badge-shared" style="font-size:0.7rem;padding:2px 8px;background:rgba(245,158,11,0.15);color:var(--amber);border-color:rgba(245,158,11,0.3)">⏳ Pending</span>`,
-    failed: `<span class="badge badge-cancelled" style="font-size:0.7rem;padding:2px 8px">✕ Failed</span>`,
+    completed: `<span class="badge badge-active" style="font-size:0.7rem;padding:2px 8px">Success</span>`,
+    pending: `<span class="badge badge-shared" style="font-size:0.7rem;padding:2px 8px;background:rgba(245,158,11,0.15);color:var(--amber);border-color:rgba(245,158,11,0.3)">Pending</span>`,
+    failed: `<span class="badge badge-cancelled" style="font-size:0.7rem;padding:2px 8px">Failed</span>`,
   };
 
   list.innerHTML = txs.map(tx => {
@@ -129,20 +127,18 @@ function renderTransactions(txs) {
 
 function openDepositModal(user) {
   openModal({
-    title: '💰 Deposit Funds',
+    title: 'Deposit Funds',
     body: `
       <p class="text-secondary text-sm" style="margin-bottom:20px">
         Add funds to your wallet to purchase and renew devices.
       </p>
       <div class="deposit-options">
         <div class="deposit-option-card" id="choose-card">
-          <div class="deposit-option-icon">💳</div>
-          <div class="deposit-option-title">Card Payment</div>
+          <div class="deposit-option-title" style="font-weight:700;font-size:1.05rem;margin-bottom:4px">Card Payment</div>
           <div class="deposit-option-desc">Visa, Mastercard & American Express. Instant credit.</div>
         </div>
         <div class="deposit-option-card" id="choose-crypto">
-          <div class="deposit-option-icon">₿</div>
-          <div class="deposit-option-title">Crypto (USDT)</div>
+          <div class="deposit-option-title" style="font-weight:700;font-size:1.05rem;margin-bottom:4px">Crypto (USDT)</div>
           <div class="deposit-option-desc">USDT via TRC-20, BEP-20, ERC-20, Polygon, Solana</div>
         </div>
       </div>
@@ -163,8 +159,7 @@ function showAmountForm(method, user) {
       <button class="btn btn-ghost btn-sm" id="back-deposit-btn">← Back</button>
     </div>
     <div style="text-align:center;margin-bottom:20px">
-      <div style="font-size:2.5rem;margin-bottom:8px">${isCard ? '💳' : '₿'}</div>
-      <h3>${isCard ? 'Card Payment' : 'Crypto Deposit (USDT)'}</h3>
+      <h3 style="font-size:1.3rem;font-weight:700">${isCard ? 'Card Payment' : 'Crypto Deposit (USDT)'}</h3>
       ${isCard ? `
         <div class="badge badge-shared" style="margin-top:8px;display:inline-flex">
           Visa & Mastercard Card Payment
@@ -198,11 +193,11 @@ function showAmountForm(method, user) {
     </div>
     <div class="stream-info-box" style="margin-bottom:16px">
       <p class="text-sm text-secondary">
-        🔒 Deposit opens safely inside this window. Your wallet balance updates automatically upon completion.
+        Deposit opens safely inside this window. Your wallet balance updates automatically upon completion.
       </p>
     </div>
     <button class="btn btn-primary btn-full" id="confirm-deposit-btn">
-      ${isCard ? '💳 Pay with Card' : '₿ Generate Crypto Deposit Details'}
+      ${isCard ? 'Pay with Card' : 'Generate Crypto Deposit Details'}
     </button>
   `);
 
@@ -231,8 +226,6 @@ function showAmountForm(method, user) {
     try {
       if (isCard) {
         const result = await depositPaystack({ amount_cents, email: user.email });
-
-        // If PaystackPop Inline SDK is loaded on page
         const publicKey = result.paystack_public_key || (import.meta && import.meta.env && import.meta.env.VITE_PAYSTACK_PUBLIC_KEY);
 
         if (window.PaystackPop && (result.access_code || publicKey)) {
@@ -249,13 +242,12 @@ function showAmountForm(method, user) {
               toast.info('Payment window closed');
             },
             callback: function() {
-              toast.success('🎉 Deposit successful! Wallet credited.');
+              toast.success('Deposit successful! Wallet credited.');
               setTimeout(loadWalletData, 1000);
             }
           });
           handler.openIframe();
         } else if (result && result.checkout_url) {
-          // Fallback to URL redirect if Inline SDK script not present
           window.location.href = result.checkout_url.replace(/^http:\/\//i, 'https://');
         } else {
           throw new Error('Failed to initialize card payment.');
@@ -269,7 +261,7 @@ function showAmountForm(method, user) {
       }
     } catch (err) {
       toast.error(err.message);
-      setButtonLoading(btn, false, isCard ? '💳 Pay with Card' : '₿ Generate Crypto Deposit Details');
+      setButtonLoading(btn, false, isCard ? 'Pay with Card' : 'Generate Crypto Deposit Details');
     }
   });
 }
@@ -288,7 +280,7 @@ function openCryptoDepositModal(data) {
   const amountToPay = data.pay_amount || data.usd_amount;
 
   openModal({
-    title: '₿ Crypto Deposit (USDT)',
+    title: 'Crypto Deposit (USDT)',
     size: 'lg',
     body: `
       <div style="text-align:center;margin-bottom:20px">
@@ -313,7 +305,7 @@ function openCryptoDepositModal(data) {
           <label class="form-label">Deposit Wallet Address (${data.pay_currency.toUpperCase()})</label>
           <div style="display:flex;gap:8px">
             <input type="text" class="form-input" id="crypto-address-input" value="${address}" readonly style="font-family:var(--font-mono);font-size:0.85rem;font-weight:600">
-            <button class="btn btn-primary btn-sm" id="copy-address-btn" style="flex-shrink:0">📋 Copy</button>
+            <button class="btn btn-primary btn-sm" id="copy-address-btn" style="flex-shrink:0">Copy Address</button>
           </div>
         </div>
       ` : ''}
@@ -322,14 +314,14 @@ function openCryptoDepositModal(data) {
         <label class="form-label">Amount to Send</label>
         <div style="display:flex;gap:8px">
           <input type="text" class="form-input" id="crypto-amount-input" value="${amountToPay} USDT" readonly style="font-family:var(--font-mono);font-weight:700">
-          <button class="btn btn-ghost btn-sm" id="copy-amount-btn" style="flex-shrink:0">📋 Copy</button>
+          <button class="btn btn-ghost btn-sm" id="copy-amount-btn" style="flex-shrink:0">Copy Amount</button>
         </div>
       </div>
 
       <div class="stream-info-box" style="margin-top:16px;background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.25)">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span class="text-xs" style="color:var(--amber);font-weight:600">
-            ⏳ Time remaining: <span id="crypto-timer">20:00</span>
+            Time remaining: <span id="crypto-timer">20:00</span>
           </span>
           <span class="text-xs text-muted">
             ● Waiting for transfer
@@ -340,20 +332,19 @@ function openCryptoDepositModal(data) {
       ${data.checkout_url ? `
         <div style="text-align:center;margin-top:12px">
           <a href="${data.checkout_url}" target="_blank" rel="noopener" class="text-xs text-accent" style="text-decoration:none">
-            🔗 Need NOWPayments Web Page? Click here →
+            Need NOWPayments Web Page? Click here →
           </a>
         </div>
       ` : ''}
     `,
     footer: `
       <button class="btn btn-primary btn-full" id="confirm-sent-btn">
-        ✓ I Have Sent Payment
+        I Have Sent Payment
       </button>
     `,
   });
 
   setTimeout(() => {
-    // Copy address button
     document.getElementById('copy-address-btn')?.addEventListener('click', () => {
       if (address) {
         navigator.clipboard.writeText(address);
@@ -361,20 +352,17 @@ function openCryptoDepositModal(data) {
       }
     });
 
-    // Copy amount button
     document.getElementById('copy-amount-btn')?.addEventListener('click', () => {
       navigator.clipboard.writeText(String(amountToPay));
       toast.success('Amount copied to clipboard!');
     });
 
-    // Confirm sent button
     document.getElementById('confirm-sent-btn')?.addEventListener('click', async () => {
       closeModal();
       toast.success('Payment recorded! Wallet will update automatically once confirmed on-chain.');
       await loadWalletData();
     });
 
-    // Live 20-minute countdown timer
     let secondsLeft = 20 * 60;
     const timerEl = document.getElementById('crypto-timer');
     const interval = setInterval(() => {

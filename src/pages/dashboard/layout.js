@@ -1,5 +1,6 @@
 /**
  * Dashboard layout — sidebar + topbar shell
+ * Clean SVG icons, fully responsive sidebar & mobile backdrop.
  */
 
 import { supabase, signOut } from '../../supabase.js';
@@ -12,10 +13,30 @@ let currentProfile = null;
 let walletBalance = 0;
 
 const navItems = [
-  { icon: '🏪', label: 'Device Store', route: '/dashboard/store', id: 'store' },
-  { icon: '📱', label: 'My Devices', route: '/dashboard/devices', id: 'devices' },
-  { icon: '▶️', label: 'Stream Access', route: '/dashboard/stream', id: 'stream' },
-  { icon: '💰', label: 'Wallet', route: '/dashboard/wallet', id: 'wallet' },
+  {
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`,
+    label: 'Device Store',
+    route: '/dashboard/store',
+    id: 'store'
+  },
+  {
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>`,
+    label: 'My Devices',
+    route: '/dashboard/devices',
+    id: 'devices'
+  },
+  {
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`,
+    label: 'Stream Access',
+    route: '/dashboard/stream',
+    id: 'stream'
+  },
+  {
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>`,
+    label: 'Wallet',
+    route: '/dashboard/wallet',
+    id: 'wallet'
+  },
 ];
 
 export async function renderDashboardLayout(activeId, contentRenderer) {
@@ -52,7 +73,7 @@ export async function renderDashboardLayout(activeId, contentRenderer) {
             ${navItems.map(item => `
               <a class="sidebar-link ${activeId === item.id ? 'active' : ''}"
                  data-route="${item.route}" id="nav-${item.id}">
-                <span class="link-icon">${item.icon}</span>
+                <span class="link-icon" style="display:flex;align-items:center;justify-content:center">${item.icon}</span>
                 <span>${item.label}</span>
               </a>
             `).join('')}
@@ -64,7 +85,9 @@ export async function renderDashboardLayout(activeId, contentRenderer) {
             <div class="sidebar-user-name">${currentProfile.full_name || 'User'}</div>
             <div class="sidebar-user-email">${currentProfile.email || user.phone || ''}</div>
           </div>
-          <button class="sidebar-logout-btn" id="logout-btn" title="Sign out">⟵</button>
+          <button class="sidebar-logout-btn" id="logout-btn" title="Sign out">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+          </button>
         </div>
       </aside>
 
@@ -75,14 +98,14 @@ export async function renderDashboardLayout(activeId, contentRenderer) {
       <main class="dashboard-main">
         <div class="topbar">
           <div class="topbar-left">
-            <button class="hamburger-btn" id="hamburger-btn">
+            <button class="hamburger-btn" id="hamburger-btn" aria-label="Toggle Navigation">
               <span></span><span></span><span></span>
             </button>
             <span class="topbar-page-title">${pageTitles[activeId] || 'Dashboard'}</span>
           </div>
           <div class="topbar-right">
             <div class="topbar-wallet" id="topbar-wallet-btn" title="View wallet">
-              💰 <span>$${(walletBalance / 100).toFixed(2)}</span>
+              <span style="font-weight:700">$${(walletBalance / 100).toFixed(2)}</span>
             </div>
             <button class="theme-toggle" id="dash-theme-btn" title="Toggle theme">
               ${theme === 'dark' ? '☀️' : '🌙'}
