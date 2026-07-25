@@ -1,7 +1,6 @@
 /**
  * Wallet page — balance, deposit (Card + Crypto), transaction history
- * Features explicit status badges (Success, Pending, Failed) for all transactions.
- * Crypto/Card deposits pending for >20 mins are automatically marked Failed by server.
+ * In-website Crypto Payment Modal with QR code, wallet address, copy buttons & 20min live countdown timer.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -15,10 +14,8 @@ export async function renderWallet() {
 }
 
 async function renderWalletContent(container, user) {
-  // Check if returning from a successful payment callback
   if (window.location.href.includes('topup=success')) {
     toast.success('🎉 Deposit successful! Your wallet balance has been updated.');
-    // Clean up URL parameter cleanly
     window.history.replaceState({}, document.title, window.location.pathname + '#/dashboard/wallet');
   }
 
@@ -174,9 +171,9 @@ function showAmountForm(method, user) {
       ${!isCard ? `
         <div style="margin-top:8px">
           <div class="form-group">
-            <label class="form-label">USDT Network</label>
+            <label class="form-label">Select USDT Network</label>
             <select class="form-select" id="crypto-network">
-              <option value="usdttrc20">TRC-20 (Tron) — Lowest fees</option>
+              <option value="usdttrc20">TRC-20 (Tron) — Recommended (Fastest & Lowest Fees)</option>
               <option value="usdtbsc">BEP-20 (BNB Smart Chain)</option>
               <option value="usdterc20">ERC-20 (Ethereum)</option>
               <option value="usdtmatic">Polygon (MATIC)</option>
@@ -199,11 +196,11 @@ function showAmountForm(method, user) {
     </div>
     <div class="stream-info-box" style="margin-bottom:16px">
       <p class="text-sm text-secondary">
-        🔒 You will be redirected to the secure payment checkout. Your wallet updates automatically upon completion.
+        🔒 Deposit details open inside this window. Your wallet balance updates automatically upon blockchain transfer.
       </p>
     </div>
     <button class="btn btn-primary btn-full" id="confirm-deposit-btn">
-      ${isCard ? '💳 Pay with Card' : '₿ Launch Crypto Checkout'}
+      ${isCard ? '💳 Pay with Card' : '₿ Generate Crypto Deposit Details'}
     </button>
   `);
 
@@ -227,30 +224,146 @@ function showAmountForm(method, user) {
     }
 
     const amount_cents = Math.round(amount * 100);
-    setButtonLoading(btn, true, 'Redirecting to Checkout...');
+    setButtonLoading(btn, true, isCard ? 'Opening Card Checkout...' : 'Generating Wallet Address...');
 
     try {
-      let result;
       if (isCard) {
-        result = await depositPaystack({ amount_cents, email: user.email });
+        const result = await depositPaystack({ amount_cents, email: user.email });
+        if (result && result.checkout_url) {
+          window.location.href = result.checkout_url.replace(/^http:\/\//i, 'https://');
+        } else {
+          throw new Error('Failed to generate card checkout.');
+        }
       } else {
         const network = document.getElementById('crypto-network').value;
-        result = await depositCrypto({ amount_cents, currency: network });
-      }
+        const result = await depositCrypto({ amount_cents, currency: network });
 
-      if (result && result.checkout_url) {
-        // Ensure HTTPS
-        const safeUrl = result.checkout_url.replace(/^http:\/\//i, 'https://');
-        window.location.href = safeUrl;
-      } else {
-        throw new Error('Failed to generate checkout link.');
+        closeModal();
+        openCryptoDepositModal(result);
       }
-
     } catch (err) {
       toast.error(err.message);
-      setButtonLoading(btn, false, isCard ? '💳 Pay with Card' : '₿ Launch Crypto Checkout');
+      setButtonLoading(btn, false, isCard ? '💳 Pay with Card' : '₿ Generate Crypto Deposit Details');
     }
   });
+}
+
+function openCryptoDepositModal(data) {
+  const networkNameMap = {
+    usdttrc20: 'USDT (TRC-20 Tron)',
+    usdtbsc: 'USDT (BEP-20 BNB Smart Chain)',
+    usdterc20: 'USDT (ERC-20 Ethereum)',
+    usdtmatic: 'USDT (Polygon MATIC)',
+    usdtsol: 'USDT (Solana)',
+  };
+
+  const networkName = networkNameMap[data.pay_currency] || data.pay_currency.toUpperCase();
+  const address = data.pay_address || '';
+  const amountToPay = data.pay_amount || data.usd_amount;
+
+  openModal({
+    title: '₿ Crypto Deposit (USDT)',
+    size: 'lg',
+    body: `
+      <div style="text-align:center;margin-bottom:20px">
+        <div class="badge badge-shared" style="font-weight:700;padding:6px 14px;font-size:0.85rem;margin-bottom:12px;display:inline-flex">
+          ${networkName}
+        </div>
+        <p class="text-sm text-secondary">
+          Send exactly <strong>${amountToPay} USDT</strong> to the wallet address below.
+        </p>
+      </div>
+
+      ${data.qr_code_url ? `
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="display:inline-block;padding:12px;background:#fff;border-radius:12px;box-shadow:var(--shadow-md)">
+            <img src="${data.qr_code_url}" alt="Deposit QR Code" style="width:180px;height:180px;display:block">
+          </div>
+        </div>
+      ` : ''}
+
+      ${address ? `
+        <div class="form-group">
+          <label class="form-label">Deposit Wallet Address (${data.pay_currency.toUpperCase()})</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" class="form-input" id="crypto-address-input" value="${address}" readonly style="font-family:var(--font-mono);font-size:0.85rem;font-weight:600">
+            <button class="btn btn-primary btn-sm" id="copy-address-btn" style="flex-shrink:0">📋 Copy</button>
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label">Amount to Send</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" class="form-input" id="crypto-amount-input" value="${amountToPay} USDT" readonly style="font-family:var(--font-mono);font-weight:700">
+          <button class="btn btn-ghost btn-sm" id="copy-amount-btn" style="flex-shrink:0">📋 Copy</button>
+        </div>
+      </div>
+
+      <div class="stream-info-box" style="margin-top:16px;background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.25)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="text-xs" style="color:var(--amber);font-weight:600">
+            ⏳ Time remaining: <span id="crypto-timer">20:00</span>
+          </span>
+          <span class="text-xs text-muted">
+            ● Waiting for transfer
+          </span>
+        </div>
+      </div>
+
+      ${data.checkout_url ? `
+        <div style="text-align:center;margin-top:12px">
+          <a href="${data.checkout_url}" target="_blank" rel="noopener" class="text-xs text-accent" style="text-decoration:none">
+            🔗 Need NOWPayments Web Page? Click here →
+          </a>
+        </div>
+      ` : ''}
+    `,
+    footer: `
+      <button class="btn btn-primary btn-full" id="confirm-sent-btn">
+        ✓ I Have Sent Payment
+      </button>
+    `,
+  });
+
+  setTimeout(() => {
+    // Copy address button
+    document.getElementById('copy-address-btn')?.addEventListener('click', () => {
+      if (address) {
+        navigator.clipboard.writeText(address);
+        toast.success('Wallet address copied to clipboard!');
+      }
+    });
+
+    // Copy amount button
+    document.getElementById('copy-amount-btn')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(String(amountToPay));
+      toast.success('Amount copied to clipboard!');
+    });
+
+    // Confirm sent button
+    document.getElementById('confirm-sent-btn')?.addEventListener('click', async () => {
+      closeModal();
+      toast.success('Payment recorded! Wallet will update automatically once confirmed on-chain.');
+      await loadWalletData();
+    });
+
+    // Live 20-minute countdown timer
+    let secondsLeft = 20 * 60;
+    const timerEl = document.getElementById('crypto-timer');
+    const interval = setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft <= 0) {
+        clearInterval(interval);
+        if (timerEl) timerEl.textContent = 'Expired';
+        return;
+      }
+      const mins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+      const secs = String(secondsLeft % 60).padStart(2, '0');
+      if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+    }, 1000);
+
+  }, 50);
 }
 
 function formatDateTime(dateStr) {

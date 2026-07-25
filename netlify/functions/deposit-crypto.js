@@ -1,11 +1,6 @@
 /**
- * POST deposit-crypto — creates NOWPayments invoice
- * Correct NOWPayments USDT ticker symbols:
- * - usdttrc20 (Tron TRC-20)
- * - usdtbsc (BNB Smart Chain BEP-20)
- * - usdterc20 (Ethereum ERC-20)
- * - usdtmatic (Polygon)
- * - usdtsol (Solana)
+ * POST deposit-crypto — creates NOWPayments direct payment or invoice
+ * Returns pay_address, pay_amount, and QR code URL for in-website modal display.
  */
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
 
@@ -27,24 +22,60 @@ export default async (req) => {
     // Correct NOWPayments ticker map
     const TICKER_MAP = {
       usdttrc20: 'usdttrc20',
-      usdtbep20: 'usdtbsc',   // NOWPayments ticker for BSC is usdtbsc
+      usdtbep20: 'usdtbsc',
       usdtbsc: 'usdtbsc',
       usdterc20: 'usdterc20',
-      usdtpolygon: 'usdtmatic', // NOWPayments ticker for Polygon is usdtmatic
+      usdtpolygon: 'usdtmatic',
       usdtmatic: 'usdtmatic',
       usdtsol: 'usdtsol',
     };
 
     const validTicker = TICKER_MAP[currency.toLowerCase()];
     if (!validTicker) {
-      return err(`Unsupported crypto network. Supported: TRC-20 (usdttrc20), BEP-20 (usdtbsc), ERC-20 (usdterc20), Polygon (usdtmatic), Solana (usdtsol)`);
+      return err(`Unsupported crypto network. Supported: TRC-20, BEP-20, ERC-20, Polygon, Solana`);
     }
 
     const usd_amount = amount_cents / 100;
     const order_id = `vd_${user.id.slice(0, 8)}_${Date.now()}`;
 
-    // Create NOWPayments invoice
-    const npRes = await fetch(`${NP_API}/invoice`, {
+    // 1. Try creating direct payment first (returns exact pay_address & pay_amount for in-app display)
+    let paymentData = null;
+    try {
+      const npPayRes = await fetch(`${NP_API}/payment`, {
+        method: 'POST',
+        headers: {
+          'x-api-key': process.env.NOWPAYMENTS_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          price_amount: usd_amount,
+          price_currency: 'usd',
+          pay_currency: validTicker,
+          order_id,
+          order_description: `Vertext Devices wallet deposit — $${usd_amount.toFixed(2)}`,
+          ipn_callback_url: `${APP_URL}/.netlify/functions/nowpay-webhook`,
+        }),
+      });
+
+      if (npPayRes.ok) {
+        paymentData = await npPayRes.json();
+      }
+    } catch (_) {
+      // Fallback to invoice API if direct payment API is unavailable
+    }
+
+    // 2. If direct payment failed or returned no address, fallback to invoice API
+    let checkout_url = '';
+    let pay_address = '';
+    let pay_amount = usd_amount;
+
+    if (paymentData && paymentData.pay_address) {
+      pay_address = paymentData.pay_address;
+      pay_amount = paymentData.pay_amount || usd_amount;
+    }
+
+    // Always generate an invoice link as backup
+    const npInvRes = await fetch(`${NP_API}/invoice`, {
       method: 'POST',
       headers: {
         'x-api-key': process.env.NOWPAYMENTS_API_KEY,
@@ -55,24 +86,19 @@ export default async (req) => {
         price_currency: 'usd',
         pay_currency: validTicker,
         order_id,
-        order_description: `Vertext Devices wallet top-up — $${usd_amount.toFixed(2)}`,
+        order_description: `Vertext Devices wallet deposit — $${usd_amount.toFixed(2)}`,
         ipn_callback_url: `${APP_URL}/.netlify/functions/nowpay-webhook`,
         success_url: `${APP_URL}/#/dashboard/wallet?topup=success`,
         cancel_url: `${APP_URL}/#/dashboard/wallet`,
-        is_fixed_rate: false,
-        is_fee_paid_by_user: false,
       }),
     });
 
-    const npData = await npRes.json();
-    if (!npRes.ok || !npData.invoice_url) {
-      throw new Error(npData.message || 'NOWPayments API error');
+    const npInvData = await npInvRes.json();
+    if (npInvData && npInvData.invoice_url) {
+      checkout_url = npInvData.invoice_url.replace(/^http:\/\//i, 'https://');
     }
 
-    // Force HTTPS on checkout URL to prevent browser Mixed Content block
-    const checkout_url = npData.invoice_url.replace(/^http:\/\//i, 'https://');
-
-    // Save pending transaction
+    // Save pending transaction record
     await supabase.from('wallet_transactions').insert({
       user_id: user.id,
       type: 'deposit',
@@ -84,11 +110,14 @@ export default async (req) => {
     });
 
     return ok({
-      checkout_url,
-      invoice_id: npData.id,
       order_id,
       amount_cents,
-      currency: validTicker,
+      usd_amount,
+      pay_amount,
+      pay_address,
+      pay_currency: validTicker,
+      checkout_url,
+      qr_code_url: pay_address ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(pay_address)}` : '',
     });
 
   } catch (e) {
