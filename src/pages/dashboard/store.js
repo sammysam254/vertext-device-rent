@@ -5,6 +5,7 @@
  * - Free trial buttons appear STRICTLY on Admin manually added devices only.
  * - Single occupancy: disables trial button if device is currently being tested.
  * - Admin pricing overrides all devices (CellGods + Admin devices).
+ * - Clean SVG icons preventing text overlap.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -79,7 +80,7 @@ async function loadInventory(user, walletBalance) {
     if (pricingRes.data) {
       pricingRes.data.forEach(p => {
         if (p.phone_id) pricingMap[p.phone_id] = p;
-        else if (p.model) pricingMap[`model_${p.model}`] = p;
+        else if (p.model) pricingMap[`model_${p.model.toLowerCase()}`] = p;
       });
     }
 
@@ -100,9 +101,39 @@ async function loadInventory(user, walletBalance) {
 }
 
 function getDevicePricing(device, defaultPricing) {
-  return pricingMap[device.phone_id]
-    || pricingMap[`model_${device.model}`]
-    || defaultPricing;
+  // 1. Check if device object has custom fees set directly
+  if (device.one_time_fee_cents > 0 || device.monthly_fee_cents > 0) {
+    return {
+      one_time_fee_cents: device.one_time_fee_cents || defaultPricing.one_time_fee_cents,
+      monthly_fee_cents: device.monthly_fee_cents || defaultPricing.monthly_fee_cents,
+    };
+  }
+
+  // 2. Direct match by phone_id
+  if (device.phone_id && pricingMap[device.phone_id]) {
+    return pricingMap[device.phone_id];
+  }
+
+  // 3. Direct match by model
+  if (device.model && pricingMap[`model_${device.model.toLowerCase()}`]) {
+    return pricingMap[`model_${device.model.toLowerCase()}`];
+  }
+
+  // 4. Fuzzy match (strip parenthetical notes like " (vip)")
+  const cleanModel = device.model ? device.model.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase() : '';
+  if (cleanModel && pricingMap[`model_${cleanModel}`]) {
+    return pricingMap[`model_${cleanModel}`];
+  }
+
+  // 5. Substring model match
+  const matchedKey = Object.keys(pricingMap).find(k => {
+    if (!k.startsWith('model_')) return false;
+    const modelName = k.replace('model_', '').toLowerCase();
+    return device.model.toLowerCase().includes(modelName);
+  });
+  if (matchedKey) return pricingMap[matchedKey];
+
+  return defaultPricing;
 }
 
 function renderDevices(devices, user, walletBalance, defaultPricing) {
@@ -123,7 +154,7 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
   }
 
   grid.innerHTML = filtered.map(device => {
-    // Admin set pricing overrides all devices (including CellGods API)
+    // Admin set pricing overrides all devices
     const pricing = getDevicePricing(device, defaultPricing);
     const oneTimeFee = pricing.one_time_fee_cents;
     const monthlyFee = pricing.monthly_fee_cents;
@@ -157,13 +188,16 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
 
     return `
       <div class="device-card animate-fade">
-        <div class="device-card-header">
-          <div class="device-card-icon ${device.platform}">
-            ${isIphone ? 'iPhone' : 'Android'}
+        <div class="device-card-header" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div class="device-card-icon ${device.platform}" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:12px">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            </svg>
           </div>
-          <div class="device-card-info">
-            <div class="device-card-model">${device.model}</div>
-            <div class="device-card-meta">
+          <div class="device-card-info" style="flex:1;min-width:0">
+            <div class="device-card-model" style="font-size:1.05rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${device.model}</div>
+            <div class="device-card-meta" style="display:flex;gap:6px;margin-top:4px">
               <span class="badge ${isManualAdmin ? 'badge-pool' : 'badge-shared'}">
                 ${isManualAdmin ? 'Featured Device' : 'Standard'}
               </span>

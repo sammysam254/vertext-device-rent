@@ -1,7 +1,7 @@
 /**
  * GET get-inventory proxy
  * Combines CellGods API inventory + Admin manually added devices flagged with show_to_customers = true.
- * Evaluates active 5-minute free trial busy state for admin devices.
+ * Evaluates active 5-minute free trial busy state & carries admin-configured fees.
  */
 
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
@@ -22,7 +22,6 @@ export default async (req) => {
       });
       const data = await res.json();
       if (data && data.success && Array.isArray(data.data)) {
-        // Explicitly flag API devices as non-manual (is_manual_admin: false)
         apiInventory = data.data.map(d => ({
           ...d,
           is_manual_admin: false,
@@ -41,7 +40,7 @@ export default async (req) => {
 
     const now = Date.now();
 
-    // Check active trial busy states
+    // Check active trial busy states and pass custom fees
     const formattedManual = await Promise.all((manualDevices || []).map(async (d) => {
       const { data: busyState } = await supabase
         .from('admin_settings')
@@ -60,6 +59,8 @@ export default async (req) => {
         stream_token: d.stream_token,
         is_manual_admin: true,
         is_trial_busy: isBusy,
+        one_time_fee_cents: d.one_time_fee_cents || 0,
+        monthly_fee_cents: d.monthly_fee_cents || 0,
       };
     }));
 

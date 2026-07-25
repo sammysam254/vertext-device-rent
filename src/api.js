@@ -72,3 +72,5 @@ export const adminToggleVisibility = (body) =>
   request('admin-toggle-visibility', { method: 'POST', body: JSON.stringify(body) });
 export const adminSetPricing = (body) =>
   request('admin-set-pricing', { method: 'POST', body: JSON.stringify(body) });
+export const adminCreditUserWallet = (body) =>
+  request('admin-credit-user-wallet', { method: 'POST', body: JSON.stringify(body) });

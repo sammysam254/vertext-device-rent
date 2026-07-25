@@ -3,6 +3,7 @@
  * Admin manually creates a standalone device & stream link.
  * System auto-generates a unique 6-digit stream token.
  * Option: show_to_customers (boolean) allows device to appear in Customer Store for rental & 5-min free trial.
+ * Option: one_time_fee_cents and monthly_fee_cents allows admin to set custom rental pricing for this device.
  */
 import { verifyAdmin, ok, err, supabase } from './auth-check.js';
 
@@ -38,6 +39,8 @@ export default async (req) => {
       stream_url,
       duration_days = 30,
       show_to_customers = false,
+      one_time_fee_cents = 0,
+      monthly_fee_cents = 0,
     } = body;
 
     if (!stream_url) return err('Stream URL is required');
@@ -60,6 +63,8 @@ export default async (req) => {
         stream_url,
         stream_token,
         show_to_customers: !!show_to_customers,
+        one_time_fee_cents: parseInt(one_time_fee_cents) || 0,
+        monthly_fee_cents: parseInt(monthly_fee_cents) || 0,
         purchased_at: now.toISOString(),
         expires_at: expiresAt,
         next_renewal_at: expiresAt,
@@ -77,6 +82,8 @@ export default async (req) => {
       stream_token,
       stream_url,
       show_to_customers: !!show_to_customers,
+      one_time_fee_cents: newDevice.one_time_fee_cents,
+      monthly_fee_cents: newDevice.monthly_fee_cents,
       expires_at: expiresAt,
     });
   } catch (e) {
