@@ -180,7 +180,7 @@ function confirmCancel(device) {
       const btn = document.getElementById('cancel-modal-yes');
       setButtonLoading(btn, true, 'Cancelling...');
       try {
-        await deactivateDevice(device.order_id);
+        await deactivateDevice({ order_id: device.order_id, device_id: device.id });
         closeModal();
         toast.success('Device cancelled.');
         // Reload
