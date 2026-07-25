@@ -63,5 +63,7 @@ export const adminGetUsers = () => request('admin-get-users');
 export const adminGetOrders = (params = '') => request(`admin-get-orders${params}`);
 export const adminUpdateStream = (body) =>
   request('admin-update-stream', { method: 'POST', body: JSON.stringify(body) });
+export const adminAddDevice = (body) =>
+  request('admin-add-device', { method: 'POST', body: JSON.stringify(body) });
 export const adminSetPricing = (body) =>
   request('admin-set-pricing', { method: 'POST', body: JSON.stringify(body) });
