@@ -2,10 +2,7 @@
  * POST admin-add-device
  * Admin manually creates a standalone device & stream link.
  * System auto-generates a unique 6-digit stream token.
- *
- * NOTE: These devices are owned by Admin and are NOT shown in any customer's
- * "My Devices" dashboard. They can ONLY be accessed if the admin manually shares
- * the 6-digit access token or direct link with a user.
+ * Option: show_to_customers (boolean) allows device to appear in Customer Store for rental & 5-min free trial.
  */
 import { verifyAdmin, ok, err, supabase } from './auth-check.js';
 
@@ -40,24 +37,21 @@ export default async (req) => {
       platform = 'iphone',
       stream_url,
       duration_days = 30,
+      show_to_customers = false,
     } = body;
 
     if (!stream_url) return err('Stream URL is required');
 
-    // 1. Generate unique 6-digit token
     const stream_token = await generateUniqueToken();
-
-    // 2. Expiry date calculation
     const now = new Date();
     const expiresAt = new Date(now.getTime() + duration_days * 24 * 60 * 60 * 1000).toISOString();
     const orderId = `manual_ord_${Date.now()}`;
     const phoneId = `manual_phone_${Date.now()}`;
 
-    // 3. Insert device under admin.id so it never appears in customer dashboards
     const { data: newDevice, error } = await supabase
       .from('devices')
       .insert({
-        user_id: admin.id, // Admin owned
+        user_id: admin.id,
         phone_id: phoneId,
         order_id: orderId,
         model: client_reference ? `${model} (${client_reference})` : model,
@@ -65,6 +59,7 @@ export default async (req) => {
         status: 'active',
         stream_url,
         stream_token,
+        show_to_customers: !!show_to_customers,
         purchased_at: now.toISOString(),
         expires_at: expiresAt,
         next_renewal_at: expiresAt,
@@ -81,6 +76,7 @@ export default async (req) => {
       platform,
       stream_token,
       stream_url,
+      show_to_customers: !!show_to_customers,
       expires_at: expiresAt,
     });
   } catch (e) {

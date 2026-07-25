@@ -42,9 +42,12 @@ export const deactivateDevice = (orderId) =>
 export const renewDevice = (deviceId) =>
   request('renew-device', { method: 'POST', body: JSON.stringify({ device_id: deviceId }) });
 
-// ---- Stream ----
+// ---- Stream & Trial ----
 export const lookupStream = (token) =>
   request('stream-lookup', { method: 'POST', body: JSON.stringify({ token }) });
+
+export const startTrial = (body) =>
+  request('start-trial', { method: 'POST', body: JSON.stringify(body) });
 
 // ---- Wallet ----
 export const getWallet = () => request('get-wallet');
@@ -65,5 +68,7 @@ export const adminUpdateStream = (body) =>
   request('admin-update-stream', { method: 'POST', body: JSON.stringify(body) });
 export const adminAddDevice = (body) =>
   request('admin-add-device', { method: 'POST', body: JSON.stringify(body) });
+export const adminToggleVisibility = (body) =>
+  request('admin-toggle-visibility', { method: 'POST', body: JSON.stringify(body) });
 export const adminSetPricing = (body) =>
   request('admin-set-pricing', { method: 'POST', body: JSON.stringify(body) });

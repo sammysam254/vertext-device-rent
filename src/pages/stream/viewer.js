@@ -1,7 +1,6 @@
 /**
  * Stream Viewer page — validates token and renders stream in iframe.
- * Optimized for zero touch latency, WebRTC hardware acceleration,
- * and high-speed pointer lock input.
+ * Supports 5-Minute Free Trial mode with countdown timer & post-trial conversion modal.
  */
 
 import { lookupStream } from '../../api.js';
@@ -13,6 +12,8 @@ export async function renderStreamViewer(token) {
     renderStreamEntry(app);
     return;
   }
+
+  const isTrial = window.location.hash.includes('trial=true') || window.location.search.includes('trial=true');
 
   // Show loading screen & layout shell
   app.innerHTML = `
@@ -30,12 +31,21 @@ export async function renderStreamViewer(token) {
         </div>
       </div>
 
+      ${isTrial ? `
+        <div id="trial-banner" style="background:linear-gradient(90deg, #7c3aed, #06b6d4);color:#fff;padding:8px 16px;text-align:center;font-size:0.85rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:var(--shadow-sm);z-index:10">
+          <span>⚡ 5-Minute Free Trial</span>
+          <span style="background:rgba(0,0,0,0.3);padding:2px 8px;border-radius:12px;font-family:var(--font-mono)">
+            Time Remaining: <span id="trial-countdown">05:00</span>
+          </span>
+        </div>
+      ` : ''}
+
       <div class="stream-viewport-wrapper">
         <div class="stream-phone-container" id="stream-container">
           <div class="stream-loading-overlay" id="stream-loading">
             <div class="stream-loading-logo">Vertext Devices</div>
             <div class="stream-spinner"></div>
-            <p class="stream-loading-text">Connecting low-latency stream stream...</p>
+            <p class="stream-loading-text">Connecting low-latency stream...</p>
           </div>
           <iframe
             id="stream-iframe"
@@ -51,7 +61,7 @@ export async function renderStreamViewer(token) {
 
   // Attach back button
   document.getElementById('stream-back-btn')?.addEventListener('click', () => {
-    import('../../router.js').then(({ navigate }) => navigate('/dashboard/stream'));
+    import('../../router.js').then(({ navigate }) => navigate('/dashboard/store'));
   });
 
   try {
@@ -83,7 +93,7 @@ export async function renderStreamViewer(token) {
       }
     });
 
-    // Safety timeout — remove loader after 6s regardless
+    // Safety timeout
     setTimeout(() => {
       const loader = document.getElementById('stream-loading');
       if (loader) {
@@ -92,18 +102,40 @@ export async function renderStreamViewer(token) {
       }
     }, 6000);
 
+    // 5-Minute Free Trial Countdown Handler
+    if (isTrial) {
+      let secondsLeft = 5 * 60;
+      const countdownEl = document.getElementById('trial-countdown');
+
+      const trialTimer = setInterval(() => {
+        secondsLeft--;
+        if (secondsLeft <= 0) {
+          clearInterval(trialTimer);
+          if (countdownEl) countdownEl.textContent = '00:00';
+
+          // Stop stream and show trial expired modal
+          if (iframe) iframe.src = 'about:blank';
+          showTrialExpiredModal(result.model);
+          return;
+        }
+
+        const mins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+        const secs = String(secondsLeft % 60).padStart(2, '0');
+        if (countdownEl) countdownEl.textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
   } catch (err) {
     app.innerHTML = `
       <div class="stream-entry-page">
         <div class="stream-entry-box">
-          <div class="stream-entry-icon">❌</div>
           <h2 class="stream-entry-title">Access Denied</h2>
           <p class="stream-entry-sub">${getErrorMessage(err.message)}</p>
           <button class="btn btn-primary" id="back-to-stream-btn" style="margin-top:20px">
             Try Another Token
           </button>
           <button class="btn btn-ghost" id="back-to-dash-btn" style="margin-top:8px">
-            Go to Dashboard
+            Go to Store
           </button>
         </div>
       </div>
@@ -117,11 +149,37 @@ export async function renderStreamViewer(token) {
   }
 }
 
+function showTrialExpiredModal(modelName = 'Device') {
+  import('../../components/modal.js').then(({ openModal, closeModal }) => {
+    openModal({
+      title: '5-Minute Free Trial Complete',
+      body: `
+        <div style="text-align:center;padding:12px 0">
+          <h3 style="margin-bottom:8px">Hope you enjoyed testing ${modelName}!</h3>
+          <p class="text-sm text-secondary" style="margin-bottom:16px">
+            Your 5-minute free trial has ended. Rent this device to get full, uninterrupted access.
+          </p>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-ghost" onclick="closeModal && closeModal()">Close</button>
+        <button class="btn btn-primary" id="rent-now-trial-btn">Rent Device Now</button>
+      `,
+    });
+
+    setTimeout(() => {
+      document.getElementById('rent-now-trial-btn')?.addEventListener('click', () => {
+        closeModal();
+        import('../../router.js').then(({ navigate }) => navigate('/dashboard/store'));
+      });
+    }, 50);
+  });
+}
+
 function renderStreamEntry(app) {
   app.innerHTML = `
     <div class="stream-entry-page">
       <div class="stream-entry-box">
-        <div class="stream-entry-icon">📡</div>
         <h1 class="stream-entry-title gradient-text" style="font-size:1.6rem">Vertext Devices</h1>
         <p class="stream-entry-sub">
           Enter your 6-digit device access token to start streaming.
@@ -138,7 +196,7 @@ function renderStreamEntry(app) {
             style="text-align:center;font-family:var(--font-mono);font-size:2rem;font-weight:700;letter-spacing:0.2em;padding:20px">
         </div>
         <button class="btn btn-primary btn-full btn-lg" id="stream-entry-btn">
-          ▶ Launch Stream
+          Launch Stream
         </button>
         <div style="margin-top:16px;font-size:0.8rem;color:var(--text-muted)">
           Don't have a token?

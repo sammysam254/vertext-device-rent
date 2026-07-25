@@ -1,9 +1,11 @@
 /**
  * Device Store page
+ * Displays available cloud devices (CellGods API + Admin manual devices).
+ * Features: Admin-set pricing overrides, 5-minute free trial testing, and instant rental.
  */
 
 import { renderDashboardLayout } from './layout.js';
-import { getInventory, activateDevice } from '../../api.js';
+import { getInventory, activateDevice, startTrial } from '../../api.js';
 import { toast } from '../../components/toast.js';
 import { openModal, closeModal } from '../../components/modal.js';
 import { setButtonLoading } from '../../components/loader.js';
@@ -17,8 +19,8 @@ export async function renderStore() {
 async function renderStoreContent(container, user, profile, walletBalance) {
   container.innerHTML = `
     <div class="page-header">
-      <h2>📱 Device Store</h2>
-      <span class="text-sm text-muted">Browse and rent cloud devices</span>
+      <h2>Device Store</h2>
+      <span class="text-sm text-muted">Browse, test with a 5-minute free trial, and rent cloud devices</span>
     </div>
 
     <!-- Filter bar -->
@@ -69,7 +71,7 @@ async function loadInventory(user, walletBalance) {
 
     allDevices = devices || [];
 
-    // Build pricing map
+    // Build pricing map (Admin set prices)
     pricingMap = {};
     if (pricingRes.data) {
       pricingRes.data.forEach(p => {
@@ -78,7 +80,7 @@ async function loadInventory(user, walletBalance) {
       });
     }
 
-    // Get global default
+    // Get global default admin pricing
     const globalRes = await supabase.from('admin_settings').select('value').eq('key', 'default_pricing').single();
     const defaultPricing = globalRes.data?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
 
@@ -86,7 +88,6 @@ async function loadInventory(user, walletBalance) {
   } catch (err) {
     document.getElementById('device-grid').innerHTML = `
       <div class="empty-state" style="grid-column:1/-1">
-        <div class="empty-state-icon">😕</div>
         <h3>Failed to load devices</h3>
         <p>${err.message}</p>
         <button class="btn btn-primary mt-16" onclick="location.reload()">Try Again</button>
@@ -111,7 +112,6 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
   if (!filtered.length) {
     grid.innerHTML = `
       <div class="empty-state" style="grid-column:1/-1">
-        <div class="empty-state-icon">📭</div>
         <h3>No devices available</h3>
         <p>Check back soon or try a different filter.</p>
       </div>
@@ -120,6 +120,7 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
   }
 
   grid.innerHTML = filtered.map(device => {
+    // Admin set pricing overrides all devices (including CellGods API)
     const pricing = getDevicePricing(device, defaultPricing);
     const oneTimeFee = pricing.one_time_fee_cents;
     const monthlyFee = pricing.monthly_fee_cents;
@@ -130,12 +131,14 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
       <div class="device-card animate-fade">
         <div class="device-card-header">
           <div class="device-card-icon ${device.platform}">
-            ${isIphone ? '📱' : '🤖'}
+            ${isIphone ? 'iPhone' : 'Android'}
           </div>
           <div class="device-card-info">
             <div class="device-card-model">${device.model}</div>
             <div class="device-card-meta">
-              <span class="badge ${device.source === 'pool' ? 'badge-pool' : 'badge-shared'}">${device.source}</span>
+              <span class="badge ${device.source === 'admin_custom' ? 'badge-pool' : 'badge-shared'}">
+                ${device.source === 'admin_custom' ? 'Featured Device' : 'Standard'}
+              </span>
               <span class="badge ${isIphone ? 'badge-iphone' : 'badge-android'}">${device.platform}</span>
             </div>
           </div>
@@ -151,21 +154,54 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
               <span class="price-value">$${(monthlyFee / 100).toFixed(2)}/mo</span>
             </div>
           </div>
-          <button class="btn ${canAfford ? 'btn-primary' : 'btn-secondary'} btn-full purchase-btn"
-            data-phone-id="${device.phone_id}"
-            data-model="${device.model}"
-            data-platform="${device.platform}"
-            data-one-time="${oneTimeFee}"
-            data-monthly="${monthlyFee}"
-            ${!device.assignable ? 'disabled' : ''}>
-            ${canAfford ? '🚀 Rent Device' : '💳 Top Up to Rent'}
-          </button>
+
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+            <button class="btn btn-ghost btn-full try-free-btn"
+              data-phone-id="${device.phone_id}"
+              data-model="${device.model}"
+              data-platform="${device.platform}"
+              style="border:1px solid var(--purple);color:var(--purple-light)">
+              Try Free (5 Mins)
+            </button>
+
+            <button class="btn ${canAfford ? 'btn-primary' : 'btn-secondary'} btn-full purchase-btn"
+              data-phone-id="${device.phone_id}"
+              data-model="${device.model}"
+              data-platform="${device.platform}"
+              data-one-time="${oneTimeFee}"
+              data-monthly="${monthlyFee}"
+              ${!device.assignable ? 'disabled' : ''}>
+              ${canAfford ? 'Rent Device' : 'Top Up to Rent'}
+            </button>
+          </div>
         </div>
       </div>
     `;
   }).join('');
 
-  // Attach purchase listeners
+  // 5-Minute Free Trial Listeners
+  grid.querySelectorAll('.try-free-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const phoneId = btn.dataset.phoneId;
+      const model = btn.dataset.model;
+      const platform = btn.dataset.platform;
+
+      setButtonLoading(btn, true, 'Starting Trial...');
+
+      try {
+        const trialResult = await startTrial({ phone_id: phoneId, model, platform });
+        toast.success('5-Minute Free Trial launched!');
+
+        // Navigate directly to stream viewer in trial mode
+        navigate(`/stream/${trialResult.stream_token}`);
+      } catch (err) {
+        toast.error(err.message || 'Failed to start free trial.');
+        setButtonLoading(btn, false, 'Try Free (5 Mins)');
+      }
+    });
+  });
+
+  // Purchase / Rent Listeners
   grid.querySelectorAll('.purchase-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const phoneId = btn.dataset.phoneId;
@@ -187,7 +223,7 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
 function openPurchaseModal(phoneId, model, platform, oneTime, monthly, walletBalance, user, canAfford) {
   if (!canAfford) {
     openModal({
-      title: '💳 Insufficient Balance',
+      title: 'Insufficient Balance',
       body: `
         <p class="text-secondary" style="margin-bottom:16px">
           You need <strong style="color:var(--text-primary)">$${(oneTime/100).toFixed(2)}</strong> to rent this device,
@@ -197,7 +233,7 @@ function openPurchaseModal(phoneId, model, platform, oneTime, monthly, walletBal
       `,
       footer: `
         <button class="btn btn-ghost" onclick="closeModal && closeModal()">Cancel</button>
-        <button class="btn btn-primary" id="goto-wallet-btn">💰 Top Up Wallet</button>
+        <button class="btn btn-primary" id="goto-wallet-btn">Top Up Wallet</button>
       `,
     });
     setTimeout(() => {
@@ -209,12 +245,10 @@ function openPurchaseModal(phoneId, model, platform, oneTime, monthly, walletBal
     return;
   }
 
-  const isIphone = platform === 'iphone';
   openModal({
-    title: '🚀 Confirm Device Rental',
+    title: 'Confirm Device Rental',
     body: `
       <div style="text-align:center;padding:8px 0 20px">
-        <div style="font-size:3rem;margin-bottom:12px">${isIphone ? '📱' : '🤖'}</div>
         <h3 style="margin-bottom:4px">${model}</h3>
         <p class="text-sm text-muted">${platform.charAt(0).toUpperCase() + platform.slice(1)} device</p>
       </div>
@@ -253,7 +287,7 @@ function openPurchaseModal(phoneId, model, platform, oneTime, monthly, walletBal
           duration_days: 30,
         });
         closeModal();
-        toast.success('🎉 Device activated! Check My Devices for your stream token.');
+        toast.success('Device activated! Check My Devices for your stream token.');
         navigate('/dashboard/devices');
       } catch (err) {
         toast.error(err.message);
@@ -269,63 +303,9 @@ function attachFilterListeners() {
       document.querySelectorAll('#store-filters .filter-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       currentFilter = tab.dataset.filter;
-      // Re-render with current filter (devices already loaded)
       if (allDevices.length) {
-        // Need defaultPricing - use cached or reload
-        renderDevicesFromCache();
+        renderDevices(allDevices, null, 0, { one_time_fee_cents: 999, monthly_fee_cents: 2999 });
       }
     });
   });
-}
-
-function renderDevicesFromCache() {
-  // Quick re-filter using already loaded data
-  const filtered = currentFilter === 'all'
-    ? allDevices
-    : allDevices.filter(d => d.platform === currentFilter);
-
-  const defaultPricing = { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
-  const grid = document.getElementById('device-grid');
-
-  if (!filtered.length) {
-    grid.innerHTML = `
-      <div class="empty-state" style="grid-column:1/-1">
-        <div class="empty-state-icon">📭</div>
-        <h3>No ${currentFilter !== 'all' ? currentFilter : ''} devices</h3>
-        <p>Try a different filter.</p>
-      </div>
-    `;
-    return;
-  }
-
-  grid.innerHTML = filtered.map(device => {
-    const pricing = getDevicePricing(device, defaultPricing);
-    const oneTimeFee = pricing.one_time_fee_cents;
-    const monthlyFee = pricing.monthly_fee_cents;
-    const isIphone = device.platform === 'iphone';
-    return `
-      <div class="device-card animate-fade">
-        <div class="device-card-header">
-          <div class="device-card-icon ${device.platform}">${isIphone ? '📱' : '🤖'}</div>
-          <div class="device-card-info">
-            <div class="device-card-model">${device.model}</div>
-            <div class="device-card-meta">
-              <span class="badge ${device.source === 'pool' ? 'badge-pool' : 'badge-shared'}">${device.source}</span>
-            </div>
-          </div>
-        </div>
-        <div class="device-card-body">
-          <div class="device-card-price">
-            <div class="price-row"><span class="price-label">One-time fee</span><span class="price-value highlight">$${(oneTimeFee/100).toFixed(2)}</span></div>
-            <div class="price-row"><span class="price-label">Monthly</span><span class="price-value">$${(monthlyFee/100).toFixed(2)}/mo</span></div>
-          </div>
-          <button class="btn btn-primary btn-full purchase-btn"
-            data-phone-id="${device.phone_id}" data-model="${device.model}"
-            data-platform="${device.platform}" data-one-time="${oneTimeFee}" data-monthly="${monthlyFee}">
-            🚀 Rent Device
-          </button>
-        </div>
-      </div>
-    `;
-  }).join('');
 }
