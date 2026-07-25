@@ -36,8 +36,11 @@ export const activateDevice = (body) =>
 
 export const getMyDevices = () => request('get-my-devices');
 
-export const deactivateDevice = (orderId) =>
-  request('deactivate-device', { method: 'POST', body: JSON.stringify({ order_id: orderId }) });
+export const deactivateDevice = (payload) =>
+  request('deactivate-device', {
+    method: 'POST',
+    body: JSON.stringify(typeof payload === 'object' ? payload : { order_id: payload })
+  });
 
 export const renewDevice = (deviceId) =>
   request('renew-device', { method: 'POST', body: JSON.stringify({ device_id: deviceId }) });

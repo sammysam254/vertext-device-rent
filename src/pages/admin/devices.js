@@ -5,7 +5,7 @@
  */
 
 import { renderAdminLayout } from './layout.js';
-import { adminUpdateStream, adminAddDevice, adminToggleVisibility } from '../../api.js';
+import { adminUpdateStream, adminAddDevice, adminToggleVisibility, deactivateDevice } from '../../api.js';
 import { supabase } from '../../supabase.js';
 import { toast } from '../../components/toast.js';
 import { openModal, closeModal } from '../../components/modal.js';
@@ -149,13 +149,23 @@ function renderDevicesTable(devices) {
                 }
               </td>
               <td>
-                <button class="btn btn-primary btn-sm update-stream-btn"
-                  data-id="${d.id}"
-                  data-model="${d.model}"
-                  data-email="${d.profiles?.email || 'Manual Device'}"
-                  data-token="${d.stream_token || ''}">
-                  ${d.stream_url ? 'Update Stream' : 'Set Stream'}
-                </button>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-primary btn-sm update-stream-btn"
+                    data-id="${d.id}"
+                    data-model="${d.model}"
+                    data-email="${d.profiles?.email || 'Manual Device'}"
+                    data-token="${d.stream_token || ''}">
+                    ${d.stream_url ? 'Update Stream' : 'Set Stream'}
+                  </button>
+                  ${d.status === 'active' ? `
+                    <button class="btn btn-danger btn-sm cancel-admin-device-btn"
+                      data-id="${d.id}"
+                      data-order="${d.order_id || ''}"
+                      data-model="${d.model}">
+                      ✕ Cancel
+                    </button>
+                  ` : ''}
+                </div>
               </td>
             </tr>
           `;
@@ -197,6 +207,20 @@ function renderDevicesTable(devices) {
 
   wrapper.querySelectorAll('.update-stream-btn').forEach(btn => {
     btn.addEventListener('click', () => openStreamModal(btn.dataset));
+  });
+
+  wrapper.querySelectorAll('.cancel-admin-device-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const { id, order, model } = btn.dataset;
+      if (!confirm(`Are you sure you want to cancel ${model}? It will immediately be made available for purchase in the Store again.`)) return;
+      try {
+        await deactivateDevice({ order_id: order, device_id: id });
+        toast.success(`${model} cancelled and returned to Store inventory!`);
+        await loadAdminDevices();
+      } catch (err) {
+        toast.error(err.message);
+      }
+    });
   });
 }
 
