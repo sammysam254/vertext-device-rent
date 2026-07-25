@@ -75,6 +75,7 @@ create table if not exists public.devices (
   pin                 text,
   one_time_fee_cents  integer not null default 0,
   monthly_fee_cents   integer not null default 0,
+  show_to_customers   boolean not null default false,
   purchased_at        timestamptz not null default now(),
   expires_at          timestamptz,
   next_renewal_at     timestamptz
