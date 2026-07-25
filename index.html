@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- SEO -->
+  <title>Vertext Devices — Cloud Phone Streaming</title>
+  <meta name="description" content="Rent premium iOS and Android cloud devices instantly. Stream from anywhere with Vertext Devices. Secure token-based access, flexible payments." />
+  <meta name="keywords" content="cloud phone, device rental, ios streaming, android cloud, remote device" />
+  <meta name="author" content="Vertext Devices" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Vertext Devices — Cloud Phone Streaming" />
+  <meta property="og:description" content="Rent premium iOS and Android cloud devices. Stream from anywhere." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://vertext.site" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+  <!-- Preconnect for Google Fonts (loaded in CSS) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+</head>
+<body>
+  <div id="app">
+    <!-- Initial loading state -->
+    <div style="
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a0f;
+      flex-direction: column;
+      gap: 16px;
+    ">
+      <div style="
+        font-size: 1.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #7c3aed, #06b6d4);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: -0.02em;
+      ">Vertext Devices</div>
+      <div style="
+        width: 36px; height: 36px;
+        border: 3px solid rgba(124,58,237,0.2);
+        border-top-color: #7c3aed;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      "></div>
+    </div>
+  </div>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+  </style>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
