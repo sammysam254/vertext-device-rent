@@ -1,6 +1,7 @@
 /**
  * POST activate-device
- * Deducts wallet balance, calls CellGods /activate, stores device + generates stream token
+ * Deducts wallet balance, assigns/activates device (CellGods or Admin manual device),
+ * stores device ownership + returns stream access token.
  */
 
 import { verifyAuth, ok, err, supabase } from './auth-check.js';
@@ -37,25 +38,98 @@ export default async (req) => {
       .from('wallets').select('*').eq('user_id', user.id).single();
     if (walletErr || !wallet) return err('Wallet not found', 404);
 
-    // 2. Get pricing
+    // 2. Check if this is an Admin manual device
+    const isManualDevice = phone_id.startsWith('manual_');
+
+    if (isManualDevice) {
+      // Fetch manual device record
+      const { data: manualDevice } = await supabase
+        .from('devices')
+        .select('*')
+        .eq('phone_id', phone_id)
+        .maybeSingle();
+
+      if (!manualDevice) return err('Device not found', 404);
+
+      // Get pricing
+      const { data: globalSetting } = await supabase
+        .from('admin_settings').select('value').eq('key', 'default_pricing').maybeSingle();
+      const defaultPricing = globalSetting?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
+
+      const one_time_fee_cents = manualDevice.one_time_fee_cents || defaultPricing.one_time_fee_cents;
+      const monthly_fee_cents = manualDevice.monthly_fee_cents || defaultPricing.monthly_fee_cents;
+
+      // Check balance
+      if (wallet.balance_cents < one_time_fee_cents) {
+        return err(`Insufficient balance. Need $${(one_time_fee_cents/100).toFixed(2)}, have $${(wallet.balance_cents/100).toFixed(2)}`, 402);
+      }
+
+      const newBalance = wallet.balance_cents - one_time_fee_cents;
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + duration_days * 24 * 60 * 60 * 1000).toISOString();
+
+      // Transfer ownership to customer & update wallet
+      await Promise.all([
+        supabase.from('wallets')
+          .update({ balance_cents: newBalance })
+          .eq('user_id', user.id),
+
+        supabase.from('devices')
+          .update({
+            user_id: user.id, // Assign ownership to customer
+            show_to_customers: false, // Unpublish from available store
+            status: 'active',
+            one_time_fee_cents,
+            monthly_fee_cents,
+            purchased_at: now.toISOString(),
+            expires_at: expiresAt,
+            next_renewal_at: expiresAt,
+          })
+          .eq('phone_id', phone_id),
+
+        supabase.from('wallet_transactions').insert({
+          user_id: user.id,
+          type: 'purchase',
+          amount_cents: -one_time_fee_cents,
+          balance_after_cents: newBalance,
+          reference: manualDevice.order_id || `manual_ord_${Date.now()}`,
+          provider: 'vertext',
+          status: 'completed',
+        }),
+      ]);
+
+      return ok({
+        order_id: manualDevice.order_id,
+        model: manualDevice.model,
+        platform: manualDevice.platform,
+        stream_token: manualDevice.stream_token,
+        expires_at: expiresAt,
+        balance_after_cents: newBalance,
+      });
+    }
+
+    // 3. CellGods API Device Activation
+    // Get pricing safely without invalid UUID PostgREST syntax
     const { data: pricingData } = await supabase
-      .from('device_pricing').select('*')
-      .or(`phone_id.eq.${phone_id}`)
-      .eq('is_active', true).single();
+      .from('device_pricing')
+      .select('*')
+      .eq('phone_id', phone_id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     const { data: globalSetting } = await supabase
-      .from('admin_settings').select('value').eq('key', 'default_pricing').single();
+      .from('admin_settings').select('value').eq('key', 'default_pricing').maybeSingle();
 
     const pricing = pricingData || globalSetting?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
     const one_time_fee_cents = pricing.one_time_fee_cents;
     const monthly_fee_cents = pricing.monthly_fee_cents;
 
-    // 3. Check balance
+    // Check balance
     if (wallet.balance_cents < one_time_fee_cents) {
       return err(`Insufficient balance. Need $${(one_time_fee_cents/100).toFixed(2)}, have $${(wallet.balance_cents/100).toFixed(2)}`, 402);
     }
 
-    // 4. Call CellGods
+    // Call CellGods
     const cgRes = await fetch(`${CELLGODS_URL}/activate`, {
       method: 'POST',
       headers: {
@@ -76,8 +150,8 @@ export default async (req) => {
 
     const { order_id, pin, stream_url, expires_at } = cgData.data;
 
-    // 5. Get inventory details for model name
-    let model = 'Unknown Device', platform = 'unknown';
+    // Get inventory details for model name
+    let model = 'Cloud Device', platform = 'iphone';
     try {
       const invRes = await fetch(`${CELLGODS_URL}/inventory`, {
         headers: { 'X-API-Key': process.env.CELLGODS_API_KEY },
@@ -87,10 +161,8 @@ export default async (req) => {
       if (found) { model = found.model; platform = found.platform; }
     } catch (_) {}
 
-    // 6. Generate unique stream token
+    // Generate unique stream token
     const stream_token = await ensureUniqueToken();
-
-    // 7. Debit wallet + insert device + log transaction (all in one go)
     const newBalance = wallet.balance_cents - one_time_fee_cents;
 
     await Promise.all([
