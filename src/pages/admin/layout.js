@@ -1,5 +1,6 @@
 /**
  * Admin layout shell
+ * Features 1-click Customer Store switcher, responsive navigation, and mobile Sign Out controls.
  */
 
 import { supabase, signOut } from '../../supabase.js';
@@ -53,20 +54,26 @@ export async function renderAdminLayout(activeId, contentRenderer) {
             `).join('')}
           </div>
           <div class="sidebar-section" style="margin-top:16px">
-            <div class="sidebar-section-label">Customer View</div>
-            <a class="sidebar-link" data-route="/dashboard/store">
-              <span class="link-icon">👤</span>
-              <span>Customer Dashboard</span>
+            <div class="sidebar-section-label">Switch View</div>
+            <a class="sidebar-link" id="admin-sidebar-switch-cust" data-route="/dashboard/store" style="background:rgba(6,182,212,0.12);color:var(--cyan);font-weight:700">
+              <span class="link-icon">📱</span>
+              <span>Customer Store</span>
             </a>
           </div>
         </nav>
-        <div class="sidebar-user">
-          <div class="sidebar-user-avatar" style="background:linear-gradient(135deg,#ef4444,#dc2626)">A</div>
-          <div class="sidebar-user-info">
-            <div class="sidebar-user-name">Admin</div>
-            <div class="sidebar-user-email">${ADMIN_EMAIL}</div>
+
+        <div style="padding:16px">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar" style="background:linear-gradient(135deg,#ef4444,#dc2626)">A</div>
+            <div class="sidebar-user-info">
+              <div class="sidebar-user-name">Admin</div>
+              <div class="sidebar-user-email">${ADMIN_EMAIL}</div>
+            </div>
+            <button class="sidebar-logout-btn" id="admin-logout-btn" title="Sign out">⟵</button>
           </div>
-          <button class="sidebar-logout-btn" id="admin-logout-btn" title="Sign out">⟵</button>
+          <button class="btn btn-secondary btn-full" id="admin-sidebar-signout-btn" style="margin-top:12px;font-weight:600;font-size:0.85rem">
+            🚪 Sign Out
+          </button>
         </div>
       </aside>
 
@@ -77,15 +84,26 @@ export async function renderAdminLayout(activeId, contentRenderer) {
       <main class="admin-main">
         <div class="topbar">
           <div class="topbar-left">
-            <button class="hamburger-btn" id="admin-hamburger">
+            <button class="hamburger-btn" id="admin-hamburger" aria-label="Toggle Navigation">
               <span></span><span></span><span></span>
             </button>
             <span class="topbar-page-title">${pageTitles[activeId] || 'Admin'}</span>
           </div>
-          <div class="topbar-right">
+          <div class="topbar-right" style="display:flex;align-items:center;gap:8px">
+            <!-- 1-Click Customer Store Switcher -->
+            <button class="btn btn-secondary btn-sm" id="admin-topbar-switch-cust" style="font-weight:700;padding:6px 12px;font-size:0.8rem">
+              📱 Customer Store
+            </button>
+
             <span class="badge" style="background:rgba(239,68,68,0.15);color:#f87171;padding:6px 12px">⚡ Admin</span>
+
             <button class="theme-toggle" id="admin-theme-btn" title="Toggle theme">
               ${theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+
+            <!-- Topbar Mobile Sign Out Button -->
+            <button class="btn btn-ghost btn-sm" id="admin-topbar-signout-btn" style="padding:4px 10px;font-size:0.8rem;border:1px solid var(--border)">
+              Sign Out
             </button>
           </div>
         </div>
@@ -126,13 +144,22 @@ function attachAdminLayoutListeners() {
     });
   });
 
+  // 1-Click Switchers
+  document.getElementById('admin-topbar-switch-cust')?.addEventListener('click', () => navigate('/dashboard/store'));
+  document.getElementById('admin-sidebar-switch-cust')?.addEventListener('click', () => navigate('/dashboard/store'));
+
   document.getElementById('admin-theme-btn')?.addEventListener('click', () => {
     const t = toggleTheme();
     document.getElementById('admin-theme-btn').textContent = t === 'dark' ? '☀️' : '🌙';
   });
 
-  document.getElementById('admin-logout-btn')?.addEventListener('click', async () => {
+  const handleLogout = async () => {
     await signOut();
+    toast.success('Signed out.');
     navigate('/');
-  });
+  };
+
+  document.getElementById('admin-logout-btn')?.addEventListener('click', handleLogout);
+  document.getElementById('admin-topbar-signout-btn')?.addEventListener('click', handleLogout);
+  document.getElementById('admin-sidebar-signout-btn')?.addEventListener('click', handleLogout);
 }
