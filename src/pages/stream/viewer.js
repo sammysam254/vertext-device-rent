@@ -1,6 +1,7 @@
 /**
  * Stream Viewer page — validates token and renders stream in iframe
- * URL: vertext.site/stream/{token}
+ * Features centered phone-ratio viewport so controls sit right next to phone display,
+ * responsive on both desktop and mobile.
  */
 
 import { lookupStream } from '../../api.js';
@@ -13,26 +14,44 @@ export async function renderStreamViewer(token) {
     return;
   }
 
-  // Show loading screen
+  // Show loading screen & layout shell
   app.innerHTML = `
     <div class="stream-page">
       <div class="stream-topbar">
-        <span class="stream-brand">Vertext Devices</span>
-        <div class="stream-status">
+        <div class="stream-topbar-left">
+          <button class="btn btn-ghost btn-sm" id="stream-back-btn" style="padding:4px 10px;font-size:0.8rem">
+            ← Dashboard
+          </button>
+          <span class="stream-brand">Vertext Devices</span>
+        </div>
+        <div class="stream-status" id="stream-status-bar">
           <div class="stream-status-dot"></div>
-          Connecting...
+          <span>Connecting...</span>
         </div>
       </div>
-      <div class="stream-iframe-wrapper">
-        <div class="stream-loading-overlay" id="stream-loading">
-          <div class="stream-loading-logo">Vertext Devices</div>
-          <div class="stream-spinner"></div>
-          <p class="stream-loading-text">Verifying access token...</p>
+
+      <div class="stream-viewport-wrapper">
+        <div class="stream-phone-container" id="stream-container">
+          <div class="stream-loading-overlay" id="stream-loading">
+            <div class="stream-loading-logo">Vertext Devices</div>
+            <div class="stream-spinner"></div>
+            <p class="stream-loading-text">Verifying access token & initializing stream...</p>
+          </div>
+          <iframe
+            id="stream-iframe"
+            class="stream-iframe"
+            allow="fullscreen; autoplay; clipboard-read; clipboard-write; camera; microphone"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+          ></iframe>
         </div>
-        <iframe id="stream-iframe" class="stream-iframe" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
       </div>
     </div>
   `;
+
+  // Attach back button
+  document.getElementById('stream-back-btn')?.addEventListener('click', () => {
+    import('../../router.js').then(({ navigate }) => navigate('/dashboard/stream'));
+  });
 
   try {
     const result = await lookupStream(token);
@@ -42,9 +61,12 @@ export async function renderStreamViewer(token) {
     }
 
     // Update status
-    const statusEl = document.querySelector('.stream-status');
+    const statusEl = document.getElementById('stream-status-bar');
     if (statusEl) {
-      statusEl.innerHTML = `<div class="stream-status-dot"></div> Live · ${result.model || 'Device'}`;
+      statusEl.innerHTML = `
+        <div class="stream-status-dot"></div>
+        <span>Live · ${result.model || 'Device'}</span>
+      `;
     }
 
     // Load iframe
@@ -60,14 +82,14 @@ export async function renderStreamViewer(token) {
       }
     });
 
-    // Safety timeout — remove loader after 10s regardless
+    // Safety timeout — remove loader after 8s regardless
     setTimeout(() => {
       const loader = document.getElementById('stream-loading');
       if (loader) {
         loader.style.opacity = '0';
         setTimeout(() => loader.remove(), 300);
       }
-    }, 10000);
+    }, 8000);
 
   } catch (err) {
     app.innerHTML = `
@@ -95,7 +117,6 @@ export async function renderStreamViewer(token) {
 }
 
 function renderStreamEntry(app) {
-  // Token entry for direct access via vertext.site/stream
   app.innerHTML = `
     <div class="stream-entry-page">
       <div class="stream-entry-box">
@@ -103,7 +124,6 @@ function renderStreamEntry(app) {
         <h1 class="stream-entry-title gradient-text" style="font-size:1.6rem">Vertext Devices</h1>
         <p class="stream-entry-sub">
           Enter your 6-digit device access token to start streaming.
-          Your token is available in your Vertext Devices dashboard.
         </p>
 
         <div id="stream-entry-msg"></div>
