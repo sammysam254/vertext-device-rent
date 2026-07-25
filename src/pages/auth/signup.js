@@ -1,5 +1,5 @@
 /**
- * Signup page — email OTP only
+ * Signup page — Full Name, Email, Password + 6-digit OTP Verification
  */
 
 import { supabase } from '../../supabase.js';
@@ -45,9 +45,9 @@ export function renderSignup() {
 
           <div class="auth-box">
             <h2 class="auth-title">Create your account</h2>
-            <p class="auth-subtitle">Get started with cloud device streaming</p>
+            <p class="auth-subtitle">Set up your account & password</p>
 
-            <!-- Step 1: Details + email -->
+            <!-- Step 1: Name, Email & Password -->
             <div id="signup-step-1">
               <div id="signup-msg"></div>
               <div class="form-group">
@@ -60,22 +60,33 @@ export function renderSignup() {
                 <input type="email" class="form-input" id="signup-email"
                   placeholder="you@example.com" autocomplete="email">
               </div>
+              <div class="form-group">
+                <label class="form-label">Create Password</label>
+                <div style="position:relative">
+                  <input type="password" class="form-input" id="signup-password"
+                    placeholder="At least 6 characters" autocomplete="new-password" style="padding-right:45px">
+                  <button type="button" class="btn btn-ghost btn-sm" id="toggle-pw-s"
+                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:4px 8px;font-size:0.8rem">
+                    👁️
+                  </button>
+                </div>
+              </div>
               <button class="btn btn-primary btn-full" id="signup-send-btn">
-                📧 Send Verification Code
+                Create Account & Get Verification Code
               </button>
             </div>
 
-            <!-- Step 2: OTP verify -->
+            <!-- Step 2: OTP Verification -->
             <div id="signup-step-2" class="hidden">
               <div class="auth-success">
-                ✓ Code sent to <strong id="signup-email-sent"></strong>
+                ✓ Verification code sent to <strong id="signup-email-sent"></strong>
               </div>
               <p class="text-sm text-secondary" style="margin:12px 0 16px">
-                Enter the 6-digit code from your inbox to verify and create your account.
+                Enter the 6-digit code sent to your email to activate your account.
               </p>
               <div class="form-group">
                 <label class="form-label" style="text-align:center;display:block">
-                  Verification Code
+                  6-Digit Verification Code
                 </label>
                 <div class="otp-inputs" id="signup-otp-inputs">
                   ${[0,1,2,3,4,5].map(i =>
@@ -85,7 +96,7 @@ export function renderSignup() {
                 </div>
               </div>
               <button class="btn btn-primary btn-full" id="signup-verify-btn">
-                ✓ Create Account
+                ✓ Verify Code & Sign In
               </button>
               <button class="btn btn-ghost btn-full" id="signup-resend-btn"
                 style="font-size:0.8rem;margin-top:8px">
@@ -118,6 +129,16 @@ function attachSignupListeners() {
   document.getElementById('signup-verify-btn').addEventListener('click', handleSignupVerify);
   document.getElementById('signup-resend-btn').addEventListener('click', handleSignupSend);
 
+  // Toggle password visibility
+  document.getElementById('toggle-pw-s').addEventListener('click', () => {
+    const pwInput = document.getElementById('signup-password');
+    if (pwInput.type === 'password') {
+      pwInput.type = 'text';
+    } else {
+      pwInput.type = 'password';
+    }
+  });
+
   document.getElementById('goto-login').addEventListener('click', (e) => {
     e.preventDefault();
     navigate('/login');
@@ -129,7 +150,7 @@ function attachSignupListeners() {
       t === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
   });
 
-  document.getElementById('signup-email').addEventListener('keydown', (e) => {
+  document.getElementById('signup-password').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('signup-send-btn').click();
   });
 }
@@ -138,6 +159,7 @@ async function handleSignupSend() {
   const btn = document.getElementById('signup-send-btn');
   const name = document.getElementById('signup-name').value.trim();
   const email = document.getElementById('signup-email').value.trim();
+  const password = document.getElementById('signup-password').value;
   const msgEl = document.getElementById('signup-msg');
 
   if (!name) {
@@ -148,13 +170,18 @@ async function handleSignupSend() {
     msgEl.innerHTML = `<div class="auth-error">Please enter a valid email address.</div>`;
     return;
   }
+  if (!password || password.length < 6) {
+    msgEl.innerHTML = `<div class="auth-error">Password must be at least 6 characters.</div>`;
+    return;
+  }
 
-  setButtonLoading(btn, true, 'Sending...');
+  setButtonLoading(btn, true, 'Sending verification code...');
   msgEl.innerHTML = '';
 
   try {
-    const { error } = await supabase.auth.signInWithOtp({
+    const { data, error } = await supabase.auth.signUp({
       email,
+      password,
       options: { data: { full_name: name } },
     });
     if (error) throw error;
@@ -167,7 +194,7 @@ async function handleSignupSend() {
   } catch (err) {
     msgEl.innerHTML = `<div class="auth-error">${err.message}</div>`;
   } finally {
-    setButtonLoading(btn, false, '📧 Send Verification Code');
+    setButtonLoading(btn, false, 'Create Account & Get Verification Code');
   }
 }
 
@@ -177,23 +204,27 @@ async function handleSignupVerify() {
   const token = getOtpValue('signup-otp-inputs');
 
   if (token.length !== 6) {
-    toast.error('Please enter all 6 digits.');
+    toast.error('Please enter the 6-digit verification code.');
     return;
   }
 
-  setButtonLoading(btn, true, 'Creating account...');
+  setButtonLoading(btn, true, 'Verifying...');
 
   try {
-    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-    if (error) throw error;
+    // Try signup OTP first, fallback to email OTP
+    let { error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
+    if (error) {
+      const fallback = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+      if (fallback.error) throw error;
+    }
 
-    toast.success('🎉 Welcome to Vertext Devices!');
+    toast.success('🎉 Account verified! Welcome to Vertext Devices.');
     await ensureWallet();
     navigate('/dashboard/store');
   } catch (err) {
-    toast.error(err.message || 'Invalid or expired code.');
+    toast.error(err.message || 'Invalid or expired verification code.');
   } finally {
-    setButtonLoading(btn, false, '✓ Create Account');
+    setButtonLoading(btn, false, '✓ Verify Code & Sign In');
   }
 }
 
