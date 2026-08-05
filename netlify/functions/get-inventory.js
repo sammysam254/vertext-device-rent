@@ -22,11 +22,21 @@ export default async (req) => {
       });
       const data = await res.json();
       if (data && data.success && Array.isArray(data.data)) {
-        apiInventory = data.data.map(d => ({
-          ...d,
-          is_manual_admin: false,
-          source: 'pool',
-        }));
+        apiInventory = data.data.map(d => {
+          const rawPlat = String(d.platform || '').toLowerCase();
+          const rawMod = String(d.model || '').toLowerCase();
+          let plat = 'android';
+          if (rawPlat.includes('iphone') || rawPlat.includes('ios') || rawMod.includes('iphone') || rawMod.includes('ipad')) {
+            plat = 'iphone';
+          }
+          return {
+            ...d,
+            platform: plat,
+            assignable: d.assignable !== undefined ? d.assignable : true,
+            is_manual_admin: false,
+            source: 'pool',
+          };
+        });
       }
     } catch (_) {
       // CellGods API fallback
@@ -49,12 +59,18 @@ export default async (req) => {
         .single();
 
       const isBusy = !!(busyState && busyState.value && new Date(busyState.value.expires_at).getTime() > now);
+      const rawPlat = String(d.platform || '').toLowerCase();
+      const rawMod = String(d.model || '').toLowerCase();
+      let plat = 'android';
+      if (rawPlat.includes('iphone') || rawPlat.includes('ios') || rawMod.includes('iphone') || rawMod.includes('ipad')) {
+        plat = 'iphone';
+      }
 
       return {
         phone_id: d.phone_id,
         model: d.model,
-        platform: d.platform.toLowerCase(),
-        assignable: d.status === 'active',
+        platform: plat,
+        assignable: d.status === 'active' || d.status === 'available' || d.show_to_customers === true,
         source: 'admin_custom',
         stream_token: d.stream_token,
         is_manual_admin: true,

@@ -41,6 +41,8 @@ export default async (req) => {
     // 2. Check if this is an Admin manual device
     const isManualDevice = phone_id.startsWith('manual_');
 
+    const days = Math.max(1, parseInt(duration_days) || 30);
+
     if (isManualDevice) {
       // Fetch manual device record
       const { data: manualDevice } = await supabase
@@ -56,17 +58,27 @@ export default async (req) => {
         .from('admin_settings').select('value').eq('key', 'default_pricing').maybeSingle();
       const defaultPricing = globalSetting?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
 
-      const one_time_fee_cents = manualDevice.one_time_fee_cents || defaultPricing.one_time_fee_cents;
+      const baseFee = manualDevice.one_time_fee_cents || defaultPricing.one_time_fee_cents;
       const monthly_fee_cents = manualDevice.monthly_fee_cents || defaultPricing.monthly_fee_cents;
 
-      // Check balance
-      if (wallet.balance_cents < one_time_fee_cents) {
-        return err(`Insufficient balance. Need $${(one_time_fee_cents/100).toFixed(2)}, have $${(wallet.balance_cents/100).toFixed(2)}`, 402);
+      // Divide admin markup fee for daily (1 day) & weekly (7 days)
+      let charged_fee_cents = baseFee;
+      if (days === 1) {
+        charged_fee_cents = Math.ceil(baseFee / 30);
+      } else if (days === 7) {
+        charged_fee_cents = Math.ceil(baseFee / 4);
+      } else if (days !== 30) {
+        charged_fee_cents = Math.ceil((baseFee * days) / 30);
       }
 
-      const newBalance = wallet.balance_cents - one_time_fee_cents;
+      // Check balance
+      if (wallet.balance_cents < charged_fee_cents) {
+        return err(`Insufficient balance. Need $${(charged_fee_cents/100).toFixed(2)}, have $${(wallet.balance_cents/100).toFixed(2)}`, 402);
+      }
+
+      const newBalance = wallet.balance_cents - charged_fee_cents;
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + duration_days * 24 * 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 
       // Transfer ownership to customer & update wallet
       await Promise.all([
@@ -79,7 +91,7 @@ export default async (req) => {
             user_id: user.id, // Assign ownership to customer
             show_to_customers: false, // Unpublish from available store
             status: 'active',
-            one_time_fee_cents,
+            one_time_fee_cents: charged_fee_cents,
             monthly_fee_cents,
             purchased_at: now.toISOString(),
             expires_at: expiresAt,
@@ -90,7 +102,7 @@ export default async (req) => {
         supabase.from('wallet_transactions').insert({
           user_id: user.id,
           type: 'purchase',
-          amount_cents: -one_time_fee_cents,
+          amount_cents: -charged_fee_cents,
           balance_after_cents: newBalance,
           reference: manualDevice.order_id || `manual_ord_${Date.now()}`,
           provider: 'vertext',
@@ -121,12 +133,22 @@ export default async (req) => {
       .from('admin_settings').select('value').eq('key', 'default_pricing').maybeSingle();
 
     const pricing = pricingData || globalSetting?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
-    const one_time_fee_cents = pricing.one_time_fee_cents;
+    const baseFee = pricing.one_time_fee_cents;
     const monthly_fee_cents = pricing.monthly_fee_cents;
 
+    // Divide admin markup fee for daily (1 day) & weekly (7 days)
+    let charged_fee_cents = baseFee;
+    if (days === 1) {
+      charged_fee_cents = Math.ceil(baseFee / 30);
+    } else if (days === 7) {
+      charged_fee_cents = Math.ceil(baseFee / 4);
+    } else if (days !== 30) {
+      charged_fee_cents = Math.ceil((baseFee * days) / 30);
+    }
+
     // Check balance
-    if (wallet.balance_cents < one_time_fee_cents) {
-      return err(`Insufficient balance. Need $${(one_time_fee_cents/100).toFixed(2)}, have $${(wallet.balance_cents/100).toFixed(2)}`, 402);
+    if (wallet.balance_cents < charged_fee_cents) {
+      return err(`Insufficient balance. Need $${(charged_fee_cents/100).toFixed(2)}, have $${(wallet.balance_cents/100).toFixed(2)}`, 402);
     }
 
     // Call CellGods
@@ -139,7 +161,7 @@ export default async (req) => {
       body: JSON.stringify({
         phone_id,
         customer_email: user.email || `user_${user.id}@vertext.site`,
-        duration_days,
+        duration_days: days,
       }),
     });
     const cgData = await cgRes.json();
@@ -148,7 +170,10 @@ export default async (req) => {
       return err(cgData.error || 'CellGods activation failed', cgRes.status);
     }
 
-    const { order_id, pin, stream_url, expires_at } = cgData.data;
+    const { order_id, pin, stream_url, expires_at: cgExpires } = cgData.data;
+    const now = new Date();
+    const calculatedExpires = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+    const finalExpiresAt = cgExpires || calculatedExpires;
 
     // Get inventory details for model name
     let model = 'Cloud Device', platform = 'iphone';
@@ -163,7 +188,7 @@ export default async (req) => {
 
     // Generate unique stream token
     const stream_token = await ensureUniqueToken();
-    const newBalance = wallet.balance_cents - one_time_fee_cents;
+    const newBalance = wallet.balance_cents - charged_fee_cents;
 
     await Promise.all([
       supabase.from('wallets')
@@ -180,17 +205,17 @@ export default async (req) => {
         stream_url: stream_url || null,
         stream_token,
         pin,
-        one_time_fee_cents,
+        one_time_fee_cents: charged_fee_cents,
         monthly_fee_cents,
-        purchased_at: new Date().toISOString(),
-        expires_at,
-        next_renewal_at: expires_at,
+        purchased_at: now.toISOString(),
+        expires_at: finalExpiresAt,
+        next_renewal_at: finalExpiresAt,
       }),
 
       supabase.from('wallet_transactions').insert({
         user_id: user.id,
         type: 'purchase',
-        amount_cents: -one_time_fee_cents,
+        amount_cents: -charged_fee_cents,
         balance_after_cents: newBalance,
         reference: order_id,
         provider: 'cellgods',
@@ -204,7 +229,7 @@ export default async (req) => {
       platform,
       stream_token,
       pin,
-      expires_at,
+      expires_at: finalExpiresAt,
       balance_after_cents: newBalance,
     });
 

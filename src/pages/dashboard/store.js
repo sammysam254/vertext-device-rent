@@ -2,10 +2,11 @@
  * Device Store page
  * Displays available cloud devices (CellGods API + Admin manual devices).
  * Enforces strict rules:
- * - Free trial buttons appear STRICTLY on Admin manually added devices only.
+ * - Daily, Weekly, and Monthly rental plans (calculates daily/weekly admin markup division).
+ * - Fixes undefined platform filter & badge.
+ * - Ensures rent buttons are clickable and user/wallet balance context is preserved across filters.
  * - Single occupancy: disables trial button if device is currently being tested.
- * - Admin pricing overrides all devices (CellGods + Admin devices).
- * - Clean SVG icons preventing text overlap.
+ * - Admin pricing overrides all devices.
  */
 
 import { renderDashboardLayout } from './layout.js';
@@ -16,15 +17,25 @@ import { setButtonLoading } from '../../components/loader.js';
 import { navigate } from '../../router.js';
 import { supabase } from '../../supabase.js';
 
+let allDevices = [];
+let currentFilter = 'all';
+let pricingMap = {};
+let currentUser = null;
+let currentWalletBalance = 0;
+let currentDefaultPricing = { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
+
 export async function renderStore() {
   await renderDashboardLayout('store', renderStoreContent);
 }
 
 async function renderStoreContent(container, user, profile, walletBalance) {
+  currentUser = user;
+  currentWalletBalance = walletBalance || 0;
+
   container.innerHTML = `
     <div class="page-header">
       <h2>Device Store</h2>
-      <span class="text-sm text-muted">Browse, test with a 5-minute free trial, and rent cloud devices</span>
+      <span class="text-sm text-muted">Browse, test with a 5-minute free trial, and rent cloud devices (Daily, Weekly & Monthly)</span>
     </div>
 
     <!-- Filter bar -->
@@ -40,7 +51,7 @@ async function renderStoreContent(container, user, profile, walletBalance) {
   `;
 
   attachFilterListeners();
-  await loadInventory(user, walletBalance);
+  await loadInventory();
 }
 
 function skeletonCards(n) {
@@ -61,11 +72,7 @@ function skeletonCards(n) {
   `).join('');
 }
 
-let allDevices = [];
-let currentFilter = 'all';
-let pricingMap = {};
-
-async function loadInventory(user, walletBalance) {
+async function loadInventory() {
   try {
     // Load inventory + pricing in parallel
     const [devices, pricingRes] = await Promise.all([
@@ -86,9 +93,11 @@ async function loadInventory(user, walletBalance) {
 
     // Get global default admin pricing
     const globalRes = await supabase.from('admin_settings').select('value').eq('key', 'default_pricing').single();
-    const defaultPricing = globalRes.data?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
+    if (globalRes.data?.value) {
+      currentDefaultPricing = globalRes.data.value;
+    }
 
-    renderDevices(allDevices, user, walletBalance, defaultPricing);
+    renderDevices();
   } catch (err) {
     document.getElementById('device-grid').innerHTML = `
       <div class="empty-state animate-fade" style="grid-column:1/-1;padding:48px 24px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);text-align:center">
@@ -105,32 +114,36 @@ async function loadInventory(user, walletBalance) {
   }
 }
 
-function getDevicePricing(device, defaultPricing) {
-  // 1. Check if device object has custom fees set directly
+function getNormalizedPlatform(device) {
+  const rawP = String(device.platform || '').toLowerCase();
+  const rawM = String(device.model || '').toLowerCase();
+  if (rawP.includes('iphone') || rawP.includes('ios') || rawM.includes('iphone') || rawM.includes('ipad')) {
+    return 'iphone';
+  }
+  return 'android';
+}
+
+function getDevicePricing(device) {
   if (device.one_time_fee_cents > 0 || device.monthly_fee_cents > 0) {
     return {
-      one_time_fee_cents: device.one_time_fee_cents || defaultPricing.one_time_fee_cents,
-      monthly_fee_cents: device.monthly_fee_cents || defaultPricing.monthly_fee_cents,
+      one_time_fee_cents: device.one_time_fee_cents || currentDefaultPricing.one_time_fee_cents,
+      monthly_fee_cents: device.monthly_fee_cents || currentDefaultPricing.monthly_fee_cents,
     };
   }
 
-  // 2. Direct match by phone_id
   if (device.phone_id && pricingMap[device.phone_id]) {
     return pricingMap[device.phone_id];
   }
 
-  // 3. Direct match by model
   if (device.model && pricingMap[`model_${device.model.toLowerCase()}`]) {
     return pricingMap[`model_${device.model.toLowerCase()}`];
   }
 
-  // 4. Fuzzy match (strip parenthetical notes like " (vip)")
   const cleanModel = device.model ? device.model.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase() : '';
   if (cleanModel && pricingMap[`model_${cleanModel}`]) {
     return pricingMap[`model_${cleanModel}`];
   }
 
-  // 5. Substring model match
   const matchedKey = Object.keys(pricingMap).find(k => {
     if (!k.startsWith('model_')) return false;
     const modelName = k.replace('model_', '').toLowerCase();
@@ -138,13 +151,13 @@ function getDevicePricing(device, defaultPricing) {
   });
   if (matchedKey) return pricingMap[matchedKey];
 
-  return defaultPricing;
+  return currentDefaultPricing;
 }
 
-function renderDevices(devices, user, walletBalance, defaultPricing) {
+function renderDevices() {
   const filtered = currentFilter === 'all'
-    ? devices
-    : devices.filter(d => d.platform === currentFilter);
+    ? allDevices
+    : allDevices.filter(d => getNormalizedPlatform(d) === currentFilter);
 
   const grid = document.getElementById('device-grid');
 
@@ -165,16 +178,22 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
   }
 
   grid.innerHTML = filtered.map(device => {
-    // Admin set pricing overrides all devices
-    const pricing = getDevicePricing(device, defaultPricing);
-    const oneTimeFee = pricing.one_time_fee_cents;
-    const monthlyFee = pricing.monthly_fee_cents;
-    const canAfford = walletBalance >= oneTimeFee;
-    const isIphone = device.platform === 'iphone';
+    const pricing = getDevicePricing(device);
+    const baseFee = pricing.one_time_fee_cents || 999;
+    
+    // Daily / Weekly / Monthly division
+    const dailyFee = Math.ceil(baseFee / 30);
+    const weeklyFee = Math.ceil(baseFee / 4);
+    const monthlyFee = baseFee;
 
-    // Strict Rule: Free trial button appears ONLY for Admin manual devices
+    const minAfford = currentWalletBalance >= dailyFee;
+    const platformKey = getNormalizedPlatform(device);
+    const isIphone = platformKey === 'iphone';
+    const platformLabel = isIphone ? 'iPhone' : 'Android';
+
     const isManualAdmin = device.is_manual_admin === true || device.source === 'admin_custom';
     const isTrialBusy = device.is_trial_busy === true;
+    const isAssignable = device.assignable !== false;
 
     let trialBtnHtml = '';
     if (isManualAdmin) {
@@ -187,9 +206,9 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
       } else {
         trialBtnHtml = `
           <button class="btn btn-ghost btn-full try-free-btn"
-            data-phone-id="${device.phone_id}"
-            data-model="${device.model}"
-            data-platform="${device.platform}"
+            data-phone-id="${device.phone_id || ''}"
+            data-model="${device.model || 'Cloud Device'}"
+            data-platform="${platformKey}"
             style="border:1px solid var(--purple);color:var(--purple-light)">
             Try Free (5 Mins)
           </button>
@@ -200,7 +219,7 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
     return `
       <div class="device-card animate-fade">
         <div class="device-card-header" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <div class="device-card-icon ${device.platform}" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:12px">
+          <div class="device-card-icon ${platformKey}" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:12px">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
               <line x1="12" y1="18" x2="12.01" y2="18"></line>
@@ -212,33 +231,36 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
               <span class="badge ${isManualAdmin ? 'badge-pool' : 'badge-shared'}">
                 ${isManualAdmin ? 'Featured Device' : 'Standard'}
               </span>
-              <span class="badge ${isIphone ? 'badge-iphone' : 'badge-android'}">${device.platform}</span>
+              <span class="badge ${isIphone ? 'badge-iphone' : 'badge-android'}">${platformLabel}</span>
             </div>
           </div>
         </div>
         <div class="device-card-body">
-          <div class="device-card-price">
-            <div class="price-row">
-              <span class="price-label">One-time fee</span>
-              <span class="price-value highlight">$${(oneTimeFee / 100).toFixed(2)}</span>
+          <div class="device-card-price" style="background:var(--bg-input);padding:10px 14px;border-radius:10px;display:flex;flex-direction:column;gap:4px">
+            <div class="price-row" style="display:flex;justify-content:space-between;font-size:0.85rem">
+              <span class="price-label" style="color:var(--text-muted)">Daily plan</span>
+              <span class="price-value" style="font-weight:700;color:var(--cyan)">$${(dailyFee / 100).toFixed(2)} / day</span>
             </div>
-            <div class="price-row">
-              <span class="price-label">Monthly renewal</span>
-              <span class="price-value">$${(monthlyFee / 100).toFixed(2)}/mo</span>
+            <div class="price-row" style="display:flex;justify-content:space-between;font-size:0.85rem">
+              <span class="price-label" style="color:var(--text-muted)">Weekly plan</span>
+              <span class="price-value" style="font-weight:700;color:var(--purple-light)">$${(weeklyFee / 100).toFixed(2)} / wk</span>
+            </div>
+            <div class="price-row" style="display:flex;justify-content:space-between;font-size:0.85rem">
+              <span class="price-label" style="color:var(--text-muted)">Monthly plan</span>
+              <span class="price-value highlight" style="font-weight:700;color:var(--emerald)">$${(monthlyFee / 100).toFixed(2)} / mo</span>
             </div>
           </div>
 
           <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
             ${trialBtnHtml}
 
-            <button class="btn ${canAfford ? 'btn-primary' : 'btn-secondary'} btn-full purchase-btn"
-              data-phone-id="${device.phone_id}"
-              data-model="${device.model}"
-              data-platform="${device.platform}"
-              data-one-time="${oneTimeFee}"
-              data-monthly="${monthlyFee}"
-              ${!device.assignable ? 'disabled' : ''}>
-              ${canAfford ? 'Rent Device' : 'Top Up to Rent'}
+            <button class="btn ${minAfford ? 'btn-primary' : 'btn-secondary'} btn-full purchase-btn"
+              data-phone-id="${device.phone_id || ''}"
+              data-model="${device.model || 'Cloud Device'}"
+              data-platform="${platformKey}"
+              data-base-fee="${baseFee}"
+              ${!isAssignable ? 'disabled' : ''}>
+              ${minAfford ? 'Rent Device' : 'Top Up to Rent'}
             </button>
           </div>
         </div>
@@ -258,8 +280,6 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
       try {
         const trialResult = await startTrial({ phone_id: phoneId, model, platform });
         toast.success('5-Minute Free Trial launched!');
-
-        // Navigate directly to stream viewer in trial mode
         navigate(`/stream/${trialResult.stream_token}?trial=true`);
       } catch (err) {
         toast.error(err.message || 'Failed to start free trial.');
@@ -274,94 +294,138 @@ function renderDevices(devices, user, walletBalance, defaultPricing) {
       const phoneId = btn.dataset.phoneId;
       const model = btn.dataset.model;
       const platform = btn.dataset.platform;
-      const oneTime = parseInt(btn.dataset.oneTime);
-      const monthly = parseInt(btn.dataset.monthly);
-      const canAffordNow = walletBalance >= oneTime;
+      const baseFee = parseInt(btn.dataset.baseFee) || 999;
 
-      if (!canAffordNow) {
-        openPurchaseModal(null, model, platform, oneTime, monthly, walletBalance, user, false);
-      } else {
-        openPurchaseModal(phoneId, model, platform, oneTime, monthly, walletBalance, user, true);
-      }
+      const device = allDevices.find(d => d.phone_id === phoneId) || {
+        phone_id: phoneId,
+        model,
+        platform,
+      };
+
+      openPurchaseModal(device, baseFee);
     });
   });
 }
 
-function openPurchaseModal(phoneId, model, platform, oneTime, monthly, walletBalance, user, canAfford) {
-  if (!canAfford) {
+function openPurchaseModal(device, baseFee) {
+  const dailyFee = Math.ceil(baseFee / 30);
+  const weeklyFee = Math.ceil(baseFee / 4);
+  const monthlyFee = baseFee;
+
+  let selectedDays = 1; // Default to Daily plan
+  let selectedFee = dailyFee;
+
+  function renderModalBody() {
+    const canAffordSelected = currentWalletBalance >= selectedFee;
+    const balanceAfter = currentWalletBalance - selectedFee;
+
     openModal({
-      title: 'Insufficient Balance',
+      title: '⚡ Choose Rental Plan',
       body: `
-        <p class="text-secondary" style="margin-bottom:16px">
-          You need <strong style="color:var(--text-primary)">$${(oneTime/100).toFixed(2)}</strong> to rent this device,
-          but your wallet has <strong style="color:var(--red)">$${(walletBalance/100).toFixed(2)}</strong>.
-        </p>
-        <p class="text-sm text-muted">Top up your wallet to continue.</p>
+        <div style="text-align:center;padding:4px 0 16px">
+          <h3 style="margin-bottom:4px;font-size:1.2rem">${device.model}</h3>
+          <span class="badge ${device.platform === 'iphone' ? 'badge-iphone' : 'badge-android'}">
+            ${device.platform === 'iphone' ? 'iPhone' : 'Android'}
+          </span>
+        </div>
+
+        <p class="text-xs text-muted" style="margin-bottom:8px;font-weight:600">SELECT RENTAL DURATION:</p>
+
+        <div class="rental-plans-grid" style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;margin-bottom:16px">
+          <div class="plan-option ${selectedDays === 1 ? 'selected' : ''}" data-days="1" data-fee="${dailyFee}"
+            style="cursor:pointer;border:${selectedDays === 1 ? '2px solid var(--primary)' : '1px solid var(--border)'};border-radius:12px;padding:12px 8px;text-align:center;background:${selectedDays === 1 ? 'rgba(99,102,241,0.12)' : 'var(--bg-input)'};transition:all 0.2s">
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:700;text-transform:uppercase">Daily</div>
+            <div style="font-size:1.15rem;font-weight:800;color:var(--cyan);margin:4px 0">$${(dailyFee/100).toFixed(2)}</div>
+            <div style="font-size:0.7rem;color:var(--text-secondary)">1 Day</div>
+          </div>
+
+          <div class="plan-option ${selectedDays === 7 ? 'selected' : ''}" data-days="7" data-fee="${weeklyFee}"
+            style="cursor:pointer;border:${selectedDays === 7 ? '2px solid var(--primary)' : '1px solid var(--border)'};border-radius:12px;padding:12px 8px;text-align:center;background:${selectedDays === 7 ? 'rgba(99,102,241,0.12)' : 'var(--bg-input)'};transition:all 0.2s">
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:700;text-transform:uppercase">Weekly</div>
+            <div style="font-size:1.15rem;font-weight:800;color:var(--purple-light);margin:4px 0">$${(weeklyFee/100).toFixed(2)}</div>
+            <div style="font-size:0.7rem;color:var(--text-secondary)">7 Days</div>
+          </div>
+
+          <div class="plan-option ${selectedDays === 30 ? 'selected' : ''}" data-days="30" data-fee="${monthlyFee}"
+            style="cursor:pointer;border:${selectedDays === 30 ? '2px solid var(--primary)' : '1px solid var(--border)'};border-radius:12px;padding:12px 8px;text-align:center;background:${selectedDays === 30 ? 'rgba(99,102,241,0.12)' : 'var(--bg-input)'};transition:all 0.2s">
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:700;text-transform:uppercase">Monthly</div>
+            <div style="font-size:1.15rem;font-weight:800;color:var(--emerald);margin:4px 0">$${(monthlyFee/100).toFixed(2)}</div>
+            <div style="font-size:0.7rem;color:var(--text-secondary)">30 Days</div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-input);border-radius:var(--radius-md);padding:14px;margin-bottom:14px">
+          <div class="flex-between mb-8">
+            <span class="text-sm text-muted">Plan charge</span>
+            <strong>$${(selectedFee/100).toFixed(2)}</strong>
+          </div>
+          <div class="flex-between mb-8">
+            <span class="text-sm text-muted">Your Wallet Balance</span>
+            <span>$${(currentWalletBalance/100).toFixed(2)}</span>
+          </div>
+          <div style="border-top:1px solid var(--border);margin:10px 0"></div>
+          <div class="flex-between">
+            <span class="text-sm text-muted">Balance After</span>
+            <strong style="color:${canAffordSelected ? 'var(--emerald)' : 'var(--red)'}">
+              ${canAffordSelected ? `$${(balanceAfter/100).toFixed(2)}` : 'Insufficient Funds'}
+            </strong>
+          </div>
+        </div>
+
+        <p class="text-xs text-muted">Your device will activate immediately upon confirmation. You will receive a 6-digit stream token.</p>
       `,
       footer: `
-        <button class="btn btn-ghost" onclick="closeModal && closeModal()">Cancel</button>
-        <button class="btn btn-primary" id="goto-wallet-btn">Top Up Wallet</button>
+        <button class="btn btn-ghost" id="cancel-rental-modal-btn">Cancel</button>
+        ${canAffordSelected ? `
+          <button class="btn btn-primary" id="confirm-rental-modal-btn">
+            ✓ Rent for ${selectedDays === 1 ? '1 Day' : selectedDays === 7 ? '7 Days' : '30 Days'} ($${(selectedFee/100).toFixed(2)})
+          </button>
+        ` : `
+          <button class="btn btn-primary" id="topup-wallet-modal-btn">
+            💳 Top Up Wallet
+          </button>
+        `}
       `,
     });
+
     setTimeout(() => {
-      document.getElementById('goto-wallet-btn')?.addEventListener('click', () => {
+      // Plan Selection click handlers
+      document.querySelectorAll('.plan-option').forEach(el => {
+        el.addEventListener('click', () => {
+          selectedDays = parseInt(el.dataset.days);
+          selectedFee = parseInt(el.dataset.fee);
+          renderModalBody();
+        });
+      });
+
+      document.getElementById('cancel-rental-modal-btn')?.addEventListener('click', closeModal);
+
+      document.getElementById('topup-wallet-modal-btn')?.addEventListener('click', () => {
         closeModal();
         navigate('/dashboard/wallet');
       });
+
+      document.getElementById('confirm-rental-modal-btn')?.addEventListener('click', async () => {
+        const confirmBtn = document.getElementById('confirm-rental-modal-btn');
+        setButtonLoading(confirmBtn, true, 'Activating...');
+        try {
+          await activateDevice({
+            phone_id: device.phone_id,
+            customer_email: currentUser?.email || '',
+            duration_days: selectedDays,
+          });
+          closeModal();
+          toast.success(`Device activated for ${selectedDays} day(s)! Redirecting to My Devices...`);
+          navigate('/dashboard/devices');
+        } catch (err) {
+          toast.error(err.message || 'Activation failed');
+          setButtonLoading(confirmBtn, false, `✓ Rent for ${selectedDays} Day(s)`);
+        }
+      });
     }, 50);
-    return;
   }
 
-  openModal({
-    title: 'Confirm Device Rental',
-    body: `
-      <div style="text-align:center;padding:8px 0 20px">
-        <h3 style="margin-bottom:4px">${model}</h3>
-        <p class="text-sm text-muted">${platform.charAt(0).toUpperCase() + platform.slice(1)} device</p>
-      </div>
-      <div style="background:var(--bg-input);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">
-        <div class="flex-between mb-8">
-          <span class="text-sm text-muted">One-time activation fee</span>
-          <strong>$${(oneTime/100).toFixed(2)}</strong>
-        </div>
-        <div class="flex-between mb-8">
-          <span class="text-sm text-muted">Monthly renewal</span>
-          <strong>$${(monthly/100).toFixed(2)}/mo</strong>
-        </div>
-        <div style="border-top:1px solid var(--border);margin:12px 0"></div>
-        <div class="flex-between">
-          <span class="text-sm text-muted">Your balance after</span>
-          <strong style="color:var(--emerald)">$${((walletBalance - oneTime)/100).toFixed(2)}</strong>
-        </div>
-      </div>
-      <p class="text-xs text-muted">Your device will be activated instantly. You'll receive a 6-digit stream access token.</p>
-    `,
-    footer: `
-      <button class="btn btn-ghost" id="cancel-purchase-btn">Cancel</button>
-      <button class="btn btn-primary" id="confirm-purchase-btn">✓ Confirm & Activate</button>
-    `,
-  });
-
-  setTimeout(() => {
-    document.getElementById('cancel-purchase-btn')?.addEventListener('click', closeModal);
-    document.getElementById('confirm-purchase-btn')?.addEventListener('click', async () => {
-      const confirmBtn = document.getElementById('confirm-purchase-btn');
-      setButtonLoading(confirmBtn, true, 'Activating...');
-      try {
-        await activateDevice({
-          phone_id: phoneId,
-          customer_email: user.email || '',
-          duration_days: 30,
-        });
-        closeModal();
-        toast.success('Device activated! Check My Devices for your stream token.');
-        navigate('/dashboard/devices');
-      } catch (err) {
-        toast.error(err.message);
-        setButtonLoading(confirmBtn, false, 'Confirm & Activate');
-      }
-    });
-  }, 50);
+  renderModalBody();
 }
 
 function attachFilterListeners() {
@@ -370,9 +434,7 @@ function attachFilterListeners() {
       document.querySelectorAll('#store-filters .filter-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       currentFilter = tab.dataset.filter;
-      if (allDevices.length) {
-        renderDevices(allDevices, null, 0, { one_time_fee_cents: 999, monthly_fee_cents: 2999 });
-      }
+      renderDevices();
     });
   });
 }
