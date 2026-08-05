@@ -28,6 +28,7 @@ async function renderDevicesAdminContent(container) {
     </div>
 
     <!-- Info box -->
+    <div id="admin-pending-alert-container"></div>
     <div class="stream-info-box" style="margin-bottom:24px;background:rgba(124,58,237,0.08);border-color:rgba(124,58,237,0.25)">
       <p class="text-sm" style="color:var(--text-primary)">
         <strong>Manual Device Controls:</strong> Devices added by admin can either be kept <strong>Private (Admin Only)</strong> or toggled <strong>Published to Customer Store</strong> so customers can view, try a 5-minute free trial, and rent them.
@@ -37,6 +38,7 @@ async function renderDevicesAdminContent(container) {
     <!-- Filter -->
     <div class="filter-tabs" id="device-admin-filters">
       <button class="filter-tab active" data-filter="all">All Devices</button>
+      <button class="filter-tab" data-filter="pending" id="pending-filter-tab">⚠️ Pending Stream URL</button>
       <button class="filter-tab" data-filter="manual">Manual Admin Devices</button>
       <button class="filter-tab" data-filter="purchased">Customer Purchased</button>
     </div>
@@ -62,6 +64,32 @@ async function loadAdminDevices() {
 
     if (error) throw error;
     allAdminDevices = data || [];
+
+    const pendingDevices = allAdminDevices.filter(d => d.status === 'active' && !d.stream_url);
+    const pendingAlertEl = document.getElementById('admin-pending-alert-container');
+    const pendingTabEl = document.getElementById('pending-filter-tab');
+
+    if (pendingTabEl) {
+      pendingTabEl.innerHTML = `⚠️ Pending Stream URL ${pendingDevices.length ? `(${pendingDevices.length})` : ''}`;
+    }
+
+    if (pendingAlertEl) {
+      if (pendingDevices.length > 0) {
+        pendingAlertEl.innerHTML = `
+          <div class="stream-info-box" style="margin-bottom:16px;background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.35);display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <strong style="color:var(--amber);font-size:0.95rem">⚠️ Action Required (${pendingDevices.length} Customer Rental(s) Waiting for Stream URL):</strong>
+              <p class="text-xs text-muted" style="margin-top:2px;color:var(--text-secondary)">
+                Customer(s) have rented cloud devices provisioned internally. Please click <strong style="color:var(--amber)">⚡ Set Stream URL</strong> below to attach their stream link.
+              </p>
+            </div>
+          </div>
+        `;
+      } else {
+        pendingAlertEl.innerHTML = '';
+      }
+    }
+
     renderDevicesTable(allAdminDevices);
   } catch (err) {
     document.getElementById('admin-devices-table').innerHTML = `
@@ -105,9 +133,10 @@ function renderDevicesTable(devices) {
           const isManual = d.phone_id?.startsWith('manual_');
           const directLink = `${window.location.origin}/#/stream/${d.stream_token}`;
           const isStoreVisible = !!d.show_to_customers;
+          const isMissingStream = !d.stream_url && d.status === 'active';
 
           return `
-            <tr>
+            <tr style="${isMissingStream ? 'background:rgba(245,158,11,0.05)' : ''}">
               <td>
                 ${isManual ? `
                   <span class="badge badge-pool" style="font-size:0.7rem">Manual Admin</span>
@@ -145,17 +174,18 @@ function renderDevicesTable(devices) {
               <td>
                 ${d.stream_url
                   ? `<div style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;color:var(--emerald)">✓ Set</div>`
-                  : `<span style="color:var(--amber);font-size:0.8rem">Not set</span>`
+                  : `<span class="badge" style="background:rgba(245,158,11,0.15);color:var(--amber);border:1px solid var(--amber);font-weight:700;font-size:0.75rem">⚠️ Needs Stream URL</span>`
                 }
               </td>
               <td>
                 <div style="display:flex;gap:6px">
-                  <button class="btn btn-primary btn-sm update-stream-btn"
+                  <button class="btn btn-sm update-stream-btn"
                     data-id="${d.id}"
                     data-model="${d.model}"
                     data-email="${d.profiles?.email || 'Manual Device'}"
-                    data-token="${d.stream_token || ''}">
-                    ${d.stream_url ? 'Update Stream' : 'Set Stream'}
+                    data-token="${d.stream_token || ''}"
+                    style="${isMissingStream ? 'background:var(--amber);color:#000;font-weight:800;border:none' : 'background:var(--primary);color:#fff'}">
+                    ${isMissingStream ? '⚡ Set Stream URL' : d.stream_url ? 'Update Stream' : 'Set Stream'}
                   </button>
                   ${d.status === 'active' ? `
                     <button class="btn btn-danger btn-sm cancel-admin-device-btn"

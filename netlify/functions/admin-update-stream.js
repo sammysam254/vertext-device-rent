@@ -32,7 +32,7 @@ export default async (req) => {
 
     const { error } = await supabase
       .from('devices')
-      .update({ stream_url, stream_token: new_token })
+      .update({ stream_url, stream_token: new_token, needs_admin_stream: false })
       .eq('id', device_id);
 
     if (error) throw error;

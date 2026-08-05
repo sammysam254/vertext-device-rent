@@ -212,6 +212,7 @@ export default async (req) => {
     // Generate unique stream token
     const stream_token = await ensureUniqueToken();
     const newBalance = wallet.balance_cents - charged_fee_cents;
+    const needsAdminStream = !stream_url;
 
     await Promise.all([
       supabase.from('wallets')
@@ -233,6 +234,7 @@ export default async (req) => {
         purchased_at: now.toISOString(),
         expires_at: finalExpiresAt,
         next_renewal_at: finalExpiresAt,
+        needs_admin_stream: needsAdminStream,
       }),
 
       supabase.from('wallet_transactions').insert({

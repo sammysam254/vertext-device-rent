@@ -76,6 +76,10 @@ function renderList(devices) {
 
     const streamBtn = document.getElementById(`stream-device-${device.id}`);
     streamBtn?.addEventListener('click', () => {
+      if (!device.stream_url) {
+        toast.info('⏳ Stream setup in progress. Our admin team is attaching the stream link for your device.');
+        return;
+      }
       navigate(`/stream/${device.stream_token}`);
     });
   });
@@ -88,6 +92,7 @@ function renderDeviceCard(device) {
   const now = new Date();
   const daysLeft = Math.max(0, Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24)));
   const isExpiringSoon = daysLeft <= 5 && isActive;
+  const isPendingStream = isActive && !device.stream_url;
   const streamViewerUrl = `${window.location.origin}/#/stream/${device.stream_token}`;
 
   return `
@@ -116,6 +121,12 @@ function renderDeviceCard(device) {
         </div>
       </div>
 
+      ${isPendingStream ? `
+        <div style="background:rgba(245,158,11,0.12);color:var(--amber);border:1px solid rgba(245,158,11,0.3);padding:8px 12px;border-radius:8px;font-size:0.78rem;font-weight:600;text-align:center;margin:10px 0">
+          ⏳ Stream setup in progress — Admin is attaching your stream link
+        </div>
+      ` : ''}
+
       <!-- Stream Token & Direct Link -->
       ${isActive ? `
         <div class="my-device-token-section">
@@ -141,8 +152,8 @@ function renderDeviceCard(device) {
 
       <div class="my-device-actions">
         ${isActive ? `
-          <button class="btn btn-primary btn-sm" id="stream-device-${device.id}" style="flex:1">
-            ▶ Stream Now
+          <button class="btn ${isPendingStream ? 'btn-secondary' : 'btn-primary'} btn-sm" id="stream-device-${device.id}" style="flex:1">
+            ${isPendingStream ? '⏳ Setup Pending' : '▶ Stream Now'}
           </button>
           <button class="btn btn-danger btn-sm" id="cancel-device-${device.id}">
             ✕ Cancel
