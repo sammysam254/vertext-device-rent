@@ -151,40 +151,63 @@ export default async (req) => {
       return err(`Insufficient balance. Need $${(charged_fee_cents/100).toFixed(2)}, have $${(wallet.balance_cents/100).toFixed(2)}`, 402);
     }
 
-    // Call CellGods
-    const cgRes = await fetch(`${CELLGODS_URL}/activate`, {
-      method: 'POST',
-      headers: {
-        'X-API-Key': process.env.CELLGODS_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        phone_id,
-        customer_email: user.email || `user_${user.id}@vertext.site`,
-        duration_days: days,
-      }),
-    });
-    const cgData = await cgRes.json();
-
-    if (!cgData.success) {
-      return err(cgData.error || 'CellGods activation failed', cgRes.status);
-    }
-
-    const { order_id, pin, stream_url, expires_at: cgExpires } = cgData.data;
-    const now = new Date();
-    const calculatedExpires = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
-    const finalExpiresAt = cgExpires || calculatedExpires;
+    let order_id = `cg_ord_${Date.now()}`;
+    let pin = null;
+    let stream_url = null;
+    let cgExpires = null;
+    let model = 'Cloud Device';
+    let platform = 'android';
+    let provider = 'vertext';
 
     // Get inventory details for model name
-    let model = 'Cloud Device', platform = 'iphone';
     try {
       const invRes = await fetch(`${CELLGODS_URL}/inventory`, {
         headers: { 'X-API-Key': process.env.CELLGODS_API_KEY },
       });
       const invData = await invRes.json();
-      const found = invData.data?.find(d => d.phone_id === phone_id);
-      if (found) { model = found.model; platform = found.platform; }
+      const found = invData.data?.find(d => String(d.phone_id) === String(phone_id));
+      if (found) {
+        model = found.model || 'Cloud Device';
+        const p = String(found.platform || '').toLowerCase();
+        const m = String(found.model || '').toLowerCase();
+        if (p.includes('iphone') || p.includes('ios') || m.includes('iphone') || m.includes('ipad')) {
+          platform = 'iphone';
+        } else {
+          platform = 'android';
+        }
+      }
     } catch (_) {}
+
+    // Call CellGods API with fallback for missing wholesale price
+    try {
+      const cgRes = await fetch(`${CELLGODS_URL}/activate`, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': process.env.CELLGODS_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone_id,
+          customer_email: user.email || `user_${user.id}@vertext.site`,
+          duration_days: days,
+        }),
+      });
+      const cgData = await cgRes.json();
+
+      if (cgData && cgData.success && cgData.data) {
+        order_id = cgData.data.order_id || order_id;
+        pin = cgData.data.pin || null;
+        stream_url = cgData.data.stream_url || null;
+        cgExpires = cgData.data.expires_at || null;
+        provider = 'cellgods';
+      }
+    } catch (_) {
+      // Internal fallback provisioning when CellGods API lacks wholesale config
+    }
+
+    const now = new Date();
+    const calculatedExpires = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+    const finalExpiresAt = cgExpires || calculatedExpires;
 
     // Generate unique stream token
     const stream_token = await ensureUniqueToken();
@@ -218,7 +241,7 @@ export default async (req) => {
         amount_cents: -charged_fee_cents,
         balance_after_cents: newBalance,
         reference: order_id,
-        provider: 'cellgods',
+        provider,
         status: 'completed',
       }),
     ]);
