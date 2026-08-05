@@ -58,15 +58,15 @@ export default async (req) => {
         .from('admin_settings').select('value').eq('key', 'default_pricing').maybeSingle();
       const defaultPricing = globalSetting?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
 
-      const baseFee = manualDevice.one_time_fee_cents || defaultPricing.one_time_fee_cents;
-      const monthly_fee_cents = manualDevice.monthly_fee_cents || defaultPricing.monthly_fee_cents;
+      const baseFee = manualDevice.monthly_fee_cents || manualDevice.one_time_fee_cents || defaultPricing.monthly_fee_cents || 9000;
+      const monthly_fee_cents = baseFee;
 
-      // Divide admin markup fee for daily (1 day) & weekly (7 days)
+      // Divide admin markup fee: Daily = $10 (1000c), Weekly = $40 (4000c), Monthly = $90 (9000c)
       let charged_fee_cents = baseFee;
       if (days === 1) {
-        charged_fee_cents = Math.ceil(baseFee / 30);
+        charged_fee_cents = Math.ceil(baseFee * (10 / 90));
       } else if (days === 7) {
-        charged_fee_cents = Math.ceil(baseFee / 4);
+        charged_fee_cents = Math.ceil(baseFee * (40 / 90));
       } else if (days !== 30) {
         charged_fee_cents = Math.ceil((baseFee * days) / 30);
       }
@@ -132,16 +132,16 @@ export default async (req) => {
     const { data: globalSetting } = await supabase
       .from('admin_settings').select('value').eq('key', 'default_pricing').maybeSingle();
 
-    const pricing = pricingData || globalSetting?.value || { one_time_fee_cents: 999, monthly_fee_cents: 2999 };
-    const baseFee = pricing.one_time_fee_cents;
-    const monthly_fee_cents = pricing.monthly_fee_cents;
+    const pricing = pricingData || globalSetting?.value || { one_time_fee_cents: 9000, monthly_fee_cents: 9000 };
+    const baseFee = pricing.monthly_fee_cents || pricing.one_time_fee_cents || 9000;
+    const monthly_fee_cents = baseFee;
 
-    // Divide admin markup fee for daily (1 day) & weekly (7 days)
+    // Divide admin markup fee: Daily = $10 (1000c), Weekly = $40 (4000c), Monthly = $90 (9000c)
     let charged_fee_cents = baseFee;
     if (days === 1) {
-      charged_fee_cents = Math.ceil(baseFee / 30);
+      charged_fee_cents = Math.ceil(baseFee * (10 / 90));
     } else if (days === 7) {
-      charged_fee_cents = Math.ceil(baseFee / 4);
+      charged_fee_cents = Math.ceil(baseFee * (40 / 90));
     } else if (days !== 30) {
       charged_fee_cents = Math.ceil((baseFee * days) / 30);
     }

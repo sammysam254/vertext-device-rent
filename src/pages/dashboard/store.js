@@ -179,12 +179,12 @@ function renderDevices() {
 
   grid.innerHTML = filtered.map(device => {
     const pricing = getDevicePricing(device);
-    const baseFee = pricing.one_time_fee_cents || 999;
+    const monthlyFee = pricing.monthly_fee_cents || pricing.one_time_fee_cents || 9000;
+    const baseFee = monthlyFee;
     
-    // Daily / Weekly / Monthly division
-    const dailyFee = Math.ceil(baseFee / 30);
-    const weeklyFee = Math.ceil(baseFee / 4);
-    const monthlyFee = baseFee;
+    // Daily ($10), Weekly ($40), Monthly ($90)
+    const dailyFee = Math.ceil(monthlyFee * (10 / 90));
+    const weeklyFee = Math.ceil(monthlyFee * (40 / 90));
 
     const minAfford = currentWalletBalance >= dailyFee;
     const platformKey = getNormalizedPlatform(device);
@@ -193,7 +193,6 @@ function renderDevices() {
 
     const isManualAdmin = device.is_manual_admin === true || device.source === 'admin_custom';
     const isTrialBusy = device.is_trial_busy === true;
-    const isAssignable = device.assignable !== false;
 
     let trialBtnHtml = '';
     if (isManualAdmin) {
@@ -293,7 +292,7 @@ function renderDevices() {
       const phoneId = btn.dataset.phoneId;
       const model = btn.dataset.model;
       const platform = btn.dataset.platform;
-      const baseFee = parseInt(btn.dataset.baseFee) || 999;
+      const baseFee = parseInt(btn.dataset.baseFee) || 9000;
 
       const device = allDevices.find(d => String(d.phone_id) === String(phoneId)) || {
         phone_id: phoneId,
@@ -307,9 +306,9 @@ function renderDevices() {
 }
 
 function openPurchaseModal(device, baseFee) {
-  const dailyFee = Math.ceil(baseFee / 30);
-  const weeklyFee = Math.ceil(baseFee / 4);
   const monthlyFee = baseFee;
+  const dailyFee = Math.ceil(monthlyFee * (10 / 90));
+  const weeklyFee = Math.ceil(monthlyFee * (40 / 90));
 
   let selectedDays = 1; // Default to Daily plan
   let selectedFee = dailyFee;
