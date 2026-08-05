@@ -258,8 +258,7 @@ function renderDevices() {
               data-phone-id="${device.phone_id || ''}"
               data-model="${device.model || 'Cloud Device'}"
               data-platform="${platformKey}"
-              data-base-fee="${baseFee}"
-              ${!isAssignable ? 'disabled' : ''}>
+              data-base-fee="${baseFee}">
               ${minAfford ? 'Rent Device' : 'Top Up to Rent'}
             </button>
           </div>
@@ -296,7 +295,7 @@ function renderDevices() {
       const platform = btn.dataset.platform;
       const baseFee = parseInt(btn.dataset.baseFee) || 999;
 
-      const device = allDevices.find(d => d.phone_id === phoneId) || {
+      const device = allDevices.find(d => String(d.phone_id) === String(phoneId)) || {
         phone_id: phoneId,
         model,
         platform,
